@@ -30,10 +30,11 @@ function ok(msg) {
 const mod = await import(probePath);
 const commands = new Map();
 const tools = new Map();
+const events = new Map();
 const sent = [];
 
 const pi = {
-  on: () => {},
+  on: (name, handler) => events.set(name, handler),
   registerCommand: (name, opts) => commands.set(name, opts),
   registerTool: (tool) => tools.set(tool.name, tool),
   sendMessage: (message, options) => sent.push({ message, options }),
@@ -46,6 +47,8 @@ if (!commands.has("m0-probe-follow-up")) fail('registerCommand("m0-probe-follow-
 else ok("registers m0-probe-follow-up command");
 if (!tools.has("m0_probe_wait")) fail("registerTool for m0_probe_wait was not called");
 else ok("registers m0_probe_wait tool");
+if (!events.has("session_before_compact")) fail("registers session_before_compact handler");
+else ok("registers session_before_compact handler");
 
 if (failed) {
   console.error("FAIL: probe.ts contract checks");
@@ -53,6 +56,13 @@ if (failed) {
 }
 
 const cwd = "/tmp/m0-probe-contract-cwd";
+const beforeCompact = events.get("session_before_compact");
+await beforeCompact({ reason: "manual" }, { cwd });
+let compactLog = (await readLog()).filter((e) => e.event === "session_before_compact");
+if (compactLog.length !== 1 || compactLog[0].reason !== "manual")
+  fail("session_before_compact did not record the compaction reason");
+else ok("session_before_compact records the compaction reason");
+
 const followUp = commands.get("m0-probe-follow-up");
 
 await followUp.handler("", { cwd });

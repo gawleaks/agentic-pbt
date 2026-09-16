@@ -43,6 +43,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_settled", async (_event, ctx) => {
     await record("agent_settled", ctx.cwd, { idle: ctx.isIdle() });
   });
+  pi.on("session_before_compact", async (event, ctx) => {
+    await record("session_before_compact", ctx.cwd, { reason: event.reason });
+  });
   pi.on("session_compact", async (event, ctx) => {
     await record("session_compact", ctx.cwd, { reason: event.reason });
   });
