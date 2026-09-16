@@ -66,7 +66,7 @@ M0_PROBE_LOG="$contract_log" M0_PROBE_TS_PATH="$contract_dir/probe.ts" node "$di
 if [ -n "${M0_PROBE_PI_LIVE_CHECK:-}" ]; then
   live_fixture="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-live.XXXXXX")"
   live_log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-live-log.XXXXXX")"
-  trap 'rm -rf "$stub_dir" "$fixture" "$log" "$log.stub" "$live_fixture" "$live_log"' EXIT
+  trap 'rm -rf "$stub_dir" "$fixture" "$log" "$log.stub" "$contract_dir" "$contract_log" "$live_fixture" "$live_log"' EXIT
   git -C "$live_fixture" init -q
   M0_PROBE_LOG="$live_log" timeout 20 pi -e "$dir/probe.ts" --no-session -p "Reply exactly: PROBE_CHECK" >/dev/null 2>&1 || true
   grep -Fq '"event":"session_start"' "$live_log" || { echo "FAIL: probe.ts did not record session_start" >&2; exit 1; }
