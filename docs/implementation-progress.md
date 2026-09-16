@@ -2,7 +2,7 @@
 
 **Specification:** [`docs/specs/agentic-pbt-specification-v0.2-go.md`](specs/agentic-pbt-specification-v0.2-go.md)  
 **Tracker status:** initialized  
-**Last assessed:** 2026-09-12
+**Last assessed:** 2026-09-16
 
 ## Status legend
 
@@ -24,19 +24,21 @@
 
 ### M0 — Confirm runtime integration points
 
-**State:** Not started
+**State:** In progress
 
 **Goal:** Validate actual Pi and Claude Code lifecycle capabilities before building the full framework.
 
 **Remaining work:**
 
-- [ ] Record installed Pi and Claude Code versions in a compatibility matrix.
-- [ ] Create a disposable Pi fixture that proves policy injection, tool/process invocation, end-of-run feedback, cancellation, queued-input behavior, and worker-extension loading.
-- [ ] Create a disposable Claude fixture that proves `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PostToolUse`, `Stop`, and `SubagentStop` behavior.
-- [ ] Exercise compaction, cancellation, duplicate callbacks, stop-loop protection, and separate-worktree workers where supported.
-- [ ] Record what was locally exercised, what was simulated, and each known runtime limitation.
+- [x] Record installed Pi and Claude Code versions in a compatibility matrix. — `docs/compatibility/runtime-integration-m0.md` (Pi 0.81.1, Claude Code 2.1.246, Node v24.16.0, macOS 26.6.2).
+- [x] Create a disposable Pi fixture that proves policy injection, tool/process invocation, end-of-run feedback, cancellation, queued-input behavior, and worker-extension loading. — `testdata/m0-runtime-probes/pi/`. Policy injection and process invocation have live evidence; cancellation, queued-input (follow-up), and worker-extension loading are implemented but **not yet run against a live interactive Pi session** (mocked-only evidence).
+- [x] Create a disposable Claude fixture that proves `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PostToolUse`, `Stop`, and `SubagentStop` behavior. — `testdata/m0-runtime-probes/claude/`. All six events have live evidence from bounded, non-interactive `claude -p` runs (Task 5).
+- [ ] Exercise compaction, cancellation, duplicate callbacks, stop-loop protection, and separate-worktree workers where supported. — Claude compaction/resume have live evidence (with a caveat: the shipped hook can't self-report the resume/compact `source` field); Claude cancellation only has a SIGINT approximation, not real interactive Escape-cancel. Pi compaction, cancellation, and worker boundary have **no live evidence** — only unit-mocked contract tests.
+- [x] Record what was locally exercised, what was simulated, and each known runtime limitation. — `docs/compatibility/runtime-integration-m0.md`.
 
 **Exit evidence:** Versioned compatibility record and reproducible probe results for both runtimes. No full integration is started until the required lifecycle assumptions are confirmed or documented as limitations.
+
+**Current status:** `docs/compatibility/runtime-integration-m0.md` records 10 capability rows; 5 have live evidence, 2 are partial, 3 (Pi queued follow-up/cancellation/compaction, Pi worker-extension loading, and the fully-interactive parts of Claude's Escape-cancel/resume-picker/`/compact`) have no live evidence yet — implemented and unit-tested against mocks only. M0 stays **In progress**, not Complete, until those manual interactive sessions are run. The Claude Stop-hook "exactly 2 Stop records" result is documented as contingent on this Claude Code build's hook-schema validation behavior, not asserted as a durable guarantee. Decision recorded: **proceed with documented limitation** — M1 may proceed; M2/M3 must not assume the unverified Pi/Claude behaviors above.
 
 ### M1 — Go core with Python testing vertical slice
 
@@ -157,3 +159,4 @@ When work changes this tracker:
 | Date | Milestone | Change | Verification evidence |
 | --- | --- | --- | --- |
 | 2026-09-12 | Tracker | Initialized from the v0.2 specification. | Repository inspection found documentation only; no product implementation artifacts. |
+| 2026-09-16 | M0 | Recorded live/partial/not-run compatibility evidence for Pi 0.81.1 and Claude Code 2.1.246 (Node v24.16.0, macOS 26.6.2) in `docs/compatibility/runtime-integration-m0.md`. Decision: proceed with documented limitation — M1 may proceed; M2/M3 must wait on the unresolved Pi (queued follow-up, cancellation, compaction, worker-extension loading) and Claude Code (interactive Escape-cancel, `/resume` picker UI, interactive `/compact`) manual evidence. M0 left **In progress**, not Complete. |

@@ -9,6 +9,9 @@ the compatibility record has captured the result.
 A passing script assertion proves that an event reached the probe. It does not
 replace the manual observation noted by the matching command below.
 
+The M0 go/no-go record built from these probes is
+[`docs/compatibility/runtime-integration-m0.md`](../../docs/compatibility/runtime-integration-m0.md).
+
 ## Launch commands and manual observations
 
 ### Pi
@@ -103,7 +106,8 @@ directly for these calls). Full commands and raw log excerpts are in
   `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` and created the
   marker; the run continued for exactly one more turn, then the second
   `Stop` ended it normally. Reproduced across 4 independent live runs
-  with exactly 2 `Stop` records each.
+  with exactly 2 `Stop` records each — **not an unconditional guarantee**;
+  see the schema caveat below.
 - Worker boundary: `Use m0-worker and report its response.` produced
   `SubagentStart`/`SubagentStop`, and the transcript shows the worker
   itself replying `M0_CLAUDE_WORKER_OK` before the parent relayed it.
