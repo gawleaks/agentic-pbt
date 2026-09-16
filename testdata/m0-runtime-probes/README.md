@@ -11,10 +11,16 @@ replace the manual observation noted by the matching command below.
 
 ## Launch commands and manual observations
 
-Not yet implemented. Tasks 2-5 of this plan will add:
+### Pi
 
-- Task 2: the Pi runtime launch command that sets `M0_PROBE_LOG` and drives a
-  probe session in the fixture.
+```bash
+fixture="$(testdata/m0-runtime-probes/create-fixture.sh)"
+log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi.XXXXXX")"
+testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
+```
+
+Not yet implemented. Tasks 3-5 of this plan will add:
+
 - Task 3: the manual observation notes for the Pi probe run.
 - Task 4: the Claude runtime launch command, analogous to Task 2.
 - Task 5: the manual observation notes for the Claude probe run.
