@@ -62,10 +62,35 @@ If cancellation or compaction is unavailable in the installed Pi mode,
 record the exact command, output, and limitation rather than claiming
 support.
 
-Not yet implemented. Tasks 4-5 of this plan will add:
+### Claude
 
-- Task 4: the Claude runtime launch command, analogous to Task 2.
-- Task 5: the manual observation notes for the Claude probe run.
+```bash
+fixture="$(testdata/m0-runtime-probes/create-fixture.sh)"
+log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-claude.XXXXXX")"
+testdata/m0-runtime-probes/claude/run.sh "$fixture" "$log"
+```
 
-This README will be updated with the exact commands and observations once
-those tasks land.
+`testdata/m0-runtime-probes/claude/verify-plugin.sh` covers everything that
+is mechanically checkable without an interactive session: file/executable
+presence, `record-hook.sh`'s env/arg validation, JSONL record shape, and
+the bounded one-Stop marker (the first `Stop` event appends a
+`{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` continuation request
+and creates `${M0_PROBE_LOG}.stop-once`; every subsequent `Stop` in the
+same run is still recorded but returns only the plain
+`M0_CLAUDE_Stop` acknowledgement), and `run.sh`'s argument handling, log
+truncation, stop-marker reset, and cwd/env handoff to
+`claude --plugin-dir`. When a `claude` binary is on `PATH` it also runs
+`claude plugin validate` against the plugin directory (schema-only, no
+live session) — validated against the installed Claude Code 2.1.246 with
+the manifest and hook configuration below, unchanged from the brief.
+
+**Manual-only observations.** A non-interactive validation pass cannot
+prove that hooks actually fire during a live session, that the
+`SubagentStart`/`SubagentStop` pair reaches the `m0-worker` agent, or that
+the bounded `Stop` marker is observed inside the real Claude Code TUI.
+Those require an interactive session and are Task 5's responsibility to
+run and record.
+
+Not yet implemented. Task 5 of this plan will add the manual observation
+notes for the Claude probe run above. This README will be updated with the
+exact observations once that task lands.

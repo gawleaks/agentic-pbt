@@ -1,0 +1,11 @@
+{
+  "description": "M0 lifecycle probe hooks",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh SessionStart", "timeout": 5 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh UserPromptSubmit", "timeout": 5 }] }],
+    "PostToolUse": [{ "matcher": "Read|Write|Edit|Bash", "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh PostToolUse", "timeout": 5 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh SubagentStart", "timeout": 5 }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh SubagentStop", "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/record-hook.sh Stop", "timeout": 5 }] }]
+  }
+}
