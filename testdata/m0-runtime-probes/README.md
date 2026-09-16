@@ -82,15 +82,59 @@ truncation, stop-marker reset, and cwd/env handoff to
 `claude --plugin-dir`. When a `claude` binary is on `PATH` it also runs
 `claude plugin validate` against the plugin directory (schema-only, no
 live session) — validated against the installed Claude Code 2.1.246 with
-the manifest and hook configuration below, unchanged from the brief.
+the manifest ([`claude/.claude-plugin/plugin.json`](claude/.claude-plugin/plugin.json))
+and hook configuration ([`claude/hooks/hooks.json`](claude/hooks/hooks.json)),
+unchanged from the brief.
 
 **Manual-only observations.** A non-interactive validation pass cannot
 prove that hooks actually fire during a live session, that the
 `SubagentStart`/`SubagentStop` pair reaches the `m0-worker` agent, or that
 the bounded `Stop` marker is observed inside the real Claude Code TUI.
-Those require an interactive session and are Task 5's responsibility to
-run and record.
+Task 5 exercised this with bounded, non-interactive `claude -p` calls
+against the plugin and fixture above (`run.sh` itself `exec`s an
+interactive session and has no prompt argument, so it was not used
+directly for these calls). Full commands and raw log excerpts are in
+`.superpowers/sdd/2026-09-12-m0-runtime-integration-probes/task-5-report.md`.
 
-Not yet implemented. Task 5 of this plan will add the manual observation
-notes for the Claude probe run above. This README will be updated with the
-exact observations once that task lands.
+- Prompt lifecycle: a `Read input.txt` prompt recorded `SessionStart`,
+  `UserPromptSubmit`, and `PostToolUse` with `M0_CLAUDE_<event>`
+  `additionalContext` in every case.
+- Bounded Stop: the first `Stop` returned
+  `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` and created the
+  marker; the run continued for exactly one more turn, then the second
+  `Stop` ended it normally. Reproduced across 4 independent live runs
+  with exactly 2 `Stop` records each.
+- Worker boundary: `Use m0-worker and report its response.` produced
+  `SubagentStart`/`SubagentStop`, and the transcript shows the worker
+  itself replying `M0_CLAUDE_WORKER_OK` before the parent relayed it.
+- Resume: `claude -p --resume <id> "..."` re-emitted `SessionStart` whose
+  hook payload carries `"source":"resume"`, keeping the same session id.
+- Compaction: `/compact` on a resumed session with prior turns fired a
+  `SubagentStop` (the internal summarization subagent) followed by a new
+  `SessionStart` with `"source":"compact"`; a subsequent read-only prompt
+  on the same session id completed normally.
+- Cancellation (approximation): SIGINT sent to a `claude -p` process mid
+  `Bash` call produced `"terminal_reason":"aborted_tools"` and no
+  `PostToolUse`/`Stop` record — this is a process-signal approximation of
+  Escape-cancel, not proof of the interactive TUI's own key handling.
+
+**Manual limitations — recorded, not fabricated.** Pressing Escape inside
+the interactive TUI, the `/resume` picker UI, and running `/compact`
+inside a live interactive session were not exercised; the evidence above
+substitutes `-p`/`--resume`/SIGINT calls that approximate but do not
+prove those exact interactive code paths. Separately, the installed
+Claude Code build silently discards `Stop`/`SubagentStop`
+`hookSpecificOutput` that omits the (undocumented-here) required
+`hookEventName` field — the shipped `record-hook.sh` plain acknowledgement
+omits it, and the probe's "exactly one continuation" bound depends on
+that drop; a schema-corrected copy of the hook was observed to keep
+re-triggering `Stop` (bounded, self-terminating, but no longer exactly
+one continuation). See the task-5 report for the reproduction.
+
+| Runtime | Action | Required log events | Manual observation |
+| --- | --- | --- | --- |
+| Pi | normal prompt | `session_start`, `before_agent_start`, `agent_end`, `agent_settled` | labelled policy message appears |
+| Pi | `m0_probe_exec` | `process_probe`, `tool_execution_end` | output is `M0_PROCESS_OK` |
+| Claude | read prompt | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | injected context is present |
+| Claude | worker task | `SubagentStart`, `SubagentStop` | worker returns `M0_CLAUDE_WORKER_OK` |
+| Claude | first stop | two `Stop` events | exactly one continuation occurs |
