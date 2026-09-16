@@ -19,6 +19,8 @@ async function record(event: string, cwd: string, details: Record<string, unknow
 }
 
 export default function (pi: ExtensionAPI) {
+  let followUpSent = false;
+
   pi.on("session_start", async (event, ctx) => {
     await record("session_start", ctx.cwd, { reason: event.reason });
   });
@@ -54,6 +56,35 @@ export default function (pi: ExtensionAPI) {
       const result = await pi.exec(process.execPath, ["-e", "process.stdout.write('M0_PROCESS_OK')"], { signal });
       await record("process_probe", ctx.cwd, { code: result.code, killed: result.killed, stdout: result.stdout });
       return { content: [{ type: "text", text: result.stdout }], details: {} };
+    },
+  });
+
+  pi.registerCommand("m0-probe-follow-up", {
+    description: "Queue one labelled M0 follow-up after the current agent run.",
+    handler: async (_args, ctx) => {
+      if (followUpSent) return;
+      followUpSent = true;
+      await record("follow_up_queued", ctx.cwd);
+      pi.sendMessage(
+        {
+          customType: "agentic-pbt-m0-follow-up",
+          content: "M0 probe follow-up: reply exactly M0_PI_FOLLOW_UP_OK.",
+          display: true,
+        },
+        { deliverAs: "followUp", triggerTurn: true },
+      );
+    },
+  });
+
+  pi.registerTool({
+    name: "m0_probe_wait",
+    label: "M0 Probe Wait",
+    description: "Waits for ten seconds so the M0 probe can observe cancellation.",
+    parameters: Type.Object({}),
+    async execute(_id, _params, signal, _update, ctx) {
+      const result = await pi.exec(process.execPath, ["-e", "setTimeout(() => {}, 10000)"], { signal });
+      await record("cancellation_probe", ctx.cwd, { code: result.code, killed: result.killed, aborted: Boolean(signal?.aborted) });
+      return { content: [{ type: "text", text: result.killed ? "M0_WAIT_CANCELLED" : "M0_WAIT_COMPLETED" }], details: {} };
     },
   });
 }

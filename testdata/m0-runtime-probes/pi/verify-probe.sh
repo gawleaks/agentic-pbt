@@ -3,8 +3,10 @@
 # RED before pi/probe.ts and pi/run.sh exist; GREEN after.
 #
 # Verifies the parts that are mechanically checkable without a live model
-# call: file presence, and run.sh's argument validation, log truncation,
-# and cwd/env handoff to `pi -e`. Set M0_PROBE_PI_LIVE_CHECK=1 to also
+# call: file presence, run.sh's argument validation, log truncation, and
+# cwd/env handoff to `pi -e`; and, via contract-test.mjs, the follow-up
+# command and cancellation tool logic added in Task 3 (mocked pi API, no
+# interactive/live pi process). Set M0_PROBE_PI_LIVE_CHECK=1 to also
 # exercise probe.ts against a real `pi` process (needs a configured model).
 set -eu
 
@@ -18,7 +20,9 @@ stub_dir="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-stub.XXXXXX")"
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-fixture.XXXXXX")"
 fixture="$(CDPATH= cd -- "$fixture" && pwd)"
 log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-log.XXXXXX")"
-trap 'rm -rf "$stub_dir" "$fixture" "$log" "$log.stub"' EXIT
+contract_dir="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-contract.XXXXXX")"
+contract_log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-contract-log.XXXXXX")"
+trap 'rm -rf "$stub_dir" "$fixture" "$log" "$log.stub" "$contract_dir" "$contract_log"' EXIT
 
 cat > "$stub_dir/pi" <<'EOF'
 #!/bin/sh
@@ -47,6 +51,17 @@ grep -Fq "log=$log" "$log.stub" || { echo "FAIL: run.sh did not export M0_PROBE_
 grep -Fq "args=-e $root/pi/probe.ts" "$log.stub" || { echo "FAIL: run.sh did not launch probe.ts" >&2; exit 1; }
 
 echo "PASS: run.sh contract (usage, truncation, cwd, env, launch args)"
+
+mkdir -p "$contract_dir/node_modules/typebox"
+cat > "$contract_dir/node_modules/typebox/package.json" <<'EOF'
+{"name":"typebox","version":"0.0.0","type":"module","main":"index.mjs"}
+EOF
+cat > "$contract_dir/node_modules/typebox/index.mjs" <<'EOF'
+export const Type = { Object: (schema) => schema };
+EOF
+cp "$dir/probe.ts" "$contract_dir/probe.ts"
+: > "$contract_log"
+M0_PROBE_LOG="$contract_log" M0_PROBE_TS_PATH="$contract_dir/probe.ts" node "$dir/contract-test.mjs"
 
 if [ -n "${M0_PROBE_PI_LIVE_CHECK:-}" ]; then
   live_fixture="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-live.XXXXXX")"
