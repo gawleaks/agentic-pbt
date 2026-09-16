@@ -15,10 +15,10 @@
 
 | Item | State | Evidence |
 | --- | --- | --- |
-| Product implementation | Not started | No `go.mod`, `cmd/`, `internal/`, `integrations/`, `skills/`, `schemas/`, or `testdata/` directories exist. |
+| Product implementation | In progress | M0 probes exist under `testdata/m0-runtime-probes/`; the Go core remains unstarted (`go.mod`, `cmd/`, and `internal/` do not exist). |
 | Specification | Available | `docs/specs/agentic-pbt-specification-v0.2-go.md` defines the proposed design. |
 | System context diagram | Available | `docs/specs/system-context.md` contains the initial Mermaid C4 context diagram. |
-| Version-control metadata | Unavailable here | The current directory is not a Git worktree; commit history and working-tree status cannot be assessed. |
+| Version-control metadata | Available | This repository is a Git worktree; the M0 work is isolated on `m0-runtime-probes`. |
 
 ## Milestones
 
@@ -31,14 +31,14 @@
 **Remaining work:**
 
 - [x] Record installed Pi and Claude Code versions in a compatibility matrix. — `docs/compatibility/runtime-integration-m0.md` (Pi 0.81.1, Claude Code 2.1.246, Node v24.16.0, macOS 26.6.2).
-- [x] Create a disposable Pi fixture that proves policy injection, tool/process invocation, end-of-run feedback, cancellation, queued-input behavior, and worker-extension loading. — `testdata/m0-runtime-probes/pi/`. Policy injection and process invocation have live evidence; cancellation, queued-input (follow-up), and worker-extension loading are implemented but **not yet run against a live interactive Pi session** (mocked-only evidence).
-- [x] Create a disposable Claude fixture that proves `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PostToolUse`, `Stop`, and `SubagentStop` behavior. — `testdata/m0-runtime-probes/claude/`. All six events have live evidence from bounded, non-interactive `claude -p` runs (Task 5).
+- [ ] Create a disposable Pi fixture that proves policy injection, tool/process invocation, end-of-run feedback, cancellation, queued-input behavior, and worker-extension loading. — `testdata/m0-runtime-probes/pi/` exists. The hook fires and process invocation has live evidence; Pi policy delivery, queued follow-up, cancellation, compaction, and worker-extension loading are implemented but not live-verified.
+- [x] Create a disposable Claude fixture that records `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PostToolUse`, `Stop`, and `SubagentStop` behavior. — `testdata/m0-runtime-probes/claude/` recorded all six events in bounded, non-interactive `claude -p` runs. Claude `additionalContext` delivery is disproven for the current probe on 2.1.246 because its `hookSpecificOutput` omits required `hookEventName`.
 - [ ] Exercise compaction, cancellation, duplicate callbacks, stop-loop protection, and separate-worktree workers where supported. — Claude compaction/resume have live evidence (with a caveat: the shipped hook can't self-report the resume/compact `source` field); Claude cancellation only has a SIGINT approximation, not real interactive Escape-cancel. Pi compaction, cancellation, and worker boundary have **no live evidence** — only unit-mocked contract tests.
 - [x] Record what was locally exercised, what was simulated, and each known runtime limitation. — `docs/compatibility/runtime-integration-m0.md`.
 
 **Exit evidence:** Versioned compatibility record and reproducible probe results for both runtimes. No full integration is started until the required lifecycle assumptions are confirmed or documented as limitations.
 
-**Current status:** `docs/compatibility/runtime-integration-m0.md` records 10 capability rows; 5 have live evidence, 2 are partial, 3 (Pi queued follow-up/cancellation/compaction, Pi worker-extension loading, and the fully-interactive parts of Claude's Escape-cancel/resume-picker/`/compact`) have no live evidence yet — implemented and unit-tested against mocks only. M0 stays **In progress**, not Complete, until those manual interactive sessions are run. The Claude Stop-hook "exactly 2 Stop records" result is documented as contingent on this Claude Code build's hook-schema validation behavior, not asserted as a durable guarantee. Decision recorded: **proceed with documented limitation** — M1 may proceed; M2/M3 must not assume the unverified Pi/Claude behaviors above.
+**Current status:** `docs/compatibility/runtime-integration-m0.md` records 15 capability rows: 5 live, 3 partial or hook-firing-only, 1 confirmed negative (Claude `additionalContext` is dropped), and 6 not run. M0 stays **In progress**, not Complete. Pi policy delivery, queued follow-up, cancellation, compaction, worker loading, and separate-worktree behavior still need live evidence. Claude `stop_hook_active`, hook composition, interactive cancellation/resume/compaction, and separate-worktree workers also remain unproven. The Claude Stop-hook "exactly 2 Stop records" result is contingent on this Claude Code build's hook-schema validation behavior, not a durable guarantee. Decision recorded: **proceed with documented limitation** — M1 may proceed; M2/M3 must not assume unproven behavior.
 
 ### M1 — Go core with Python testing vertical slice
 
@@ -160,3 +160,4 @@ When work changes this tracker:
 | --- | --- | --- | --- |
 | 2026-09-12 | Tracker | Initialized from the v0.2 specification. | Repository inspection found documentation only; no product implementation artifacts. |
 | 2026-09-16 | M0 | Recorded live/partial/not-run compatibility evidence for Pi 0.81.1 and Claude Code 2.1.246 (Node v24.16.0, macOS 26.6.2) in `docs/compatibility/runtime-integration-m0.md`. Decision: proceed with documented limitation — M1 may proceed; M2/M3 must wait on the unresolved Pi (queued follow-up, cancellation, compaction, worker-extension loading) and Claude Code (interactive Escape-cancel, `/resume` picker UI, interactive `/compact`) manual evidence. M0 left **In progress**, not Complete. |
+| 2026-09-16 | M0 | Corrected the durable evidence record after final review: Claude `additionalContext` is dropped by the current probe on 2.1.246, Pi policy delivery is not proven, and all unproven runtime points are enumerated. | `testdata/m0-runtime-probes/verify-docs.sh` checks the corrected claims. |
