@@ -45,6 +45,12 @@ log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi.XXXXXX")"
 testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
 ```
 
+- Policy delivery: the probe's injected text is
+  `M0 probe: policy injection reached this Pi turn.` and carries no marker.
+  A `pi -p "Reply exactly: M0_PI_POLICY_OK"` run does **not** prove delivery —
+  the model emits that string from the prompt alone, extension or not. To
+  prove delivery, put a marker inside the injected text and ask the agent to
+  quote it back, or read it off the TUI transcript by hand.
 - Continuation: submit one prompt, then run `/m0-probe-follow-up` while Pi
   is idle. Expect exactly one labelled follow-up turn, reply
   `M0_PI_FOLLOW_UP_OK`, and `agent_settled` only after that follow-up turn
@@ -60,6 +66,9 @@ testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
   `examples/extensions/subagent/` example, delegate one read-only task to
   its worker, and record whether the worker process loads the parent probe
   automatically or requires an explicit `-e "$M0_PROBE_ROOT/pi/probe.ts"`.
+- Separate-worktree worker: **not run, and no probe exists for it.**
+  `create-fixture.sh` builds one standalone repository, not a linked
+  worktree pair, so M2's separate-worktree parent verification is unprobed.
 
 If cancellation or compaction is unavailable in the installed Pi mode,
 record the exact command, output, and limitation rather than claiming
@@ -96,27 +105,35 @@ the bounded `Stop` marker is observed inside the real Claude Code TUI.
 Task 5 exercised this with bounded, non-interactive `claude -p` calls
 against the plugin and fixture above (`run.sh` itself `exec`s an
 interactive session and has no prompt argument, so it was not used
-directly for these calls). Full commands and raw log excerpts are in
-`.superpowers/sdd/2026-09-12-m0-runtime-integration-probes/task-5-report.md`.
+directly for these calls). Full commands and raw log excerpts are inlined in the durable record's
+[Inlined evidence](../../docs/compatibility/runtime-integration-m0.md#inlined-evidence)
+section (the `.superpowers/` task reports are not tracked in Git).
 
-- Prompt lifecycle: a `Read input.txt` prompt recorded `SessionStart`,
-  `UserPromptSubmit`, and `PostToolUse` with `M0_CLAUDE_<event>`
-  `additionalContext` in every case.
+- Prompt lifecycle (hook firing only): a `Read input.txt` prompt recorded
+  `SessionStart`, `UserPromptSubmit`, and `PostToolUse`. The hooks fired and
+  were logged; their `M0_CLAUDE_<event>` `additionalContext` was **not
+  delivered** to the session — see the schema note below. The prompt's own
+  `M0_CLAUDE_PROMPT_OK` reply is dictated by the prompt and proves nothing
+  about injection.
 - Bounded Stop: the first `Stop` returned
   `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` and created the
   marker; the run continued for exactly one more turn, then the second
   `Stop` ended it normally. Reproduced across 4 independent live runs
-  with exactly 2 `Stop` records each — **not an unconditional guarantee**;
-  see the schema caveat below.
+  with exactly 2 `Stop` records each — **not an unconditional guarantee**:
+  the bound depends on the schema rejection described below, not on
+  anything `record-hook.sh` enforces. See the schema note below.
 - Worker boundary: `Use m0-worker and report its response.` produced
   `SubagentStart`/`SubagentStop`, and the transcript shows the worker
   itself replying `M0_CLAUDE_WORKER_OK` before the parent relayed it.
-- Resume: `claude -p --resume <id> "..."` re-emitted `SessionStart` whose
-  hook payload carries `"source":"resume"`, keeping the same session id.
+- Resume: `claude -p --resume <id> "..."` re-emitted `SessionStart`, keeping
+  the same session id. The `"source":"resume"` field was visible only through
+  a throwaway `/tmp` debug copy of the hook that reads stdin — the shipped
+  `record-hook.sh` never reads hook stdin and cannot report it.
 - Compaction: `/compact` on a resumed session with prior turns fired a
   `SubagentStop` (the internal summarization subagent) followed by a new
-  `SessionStart` with `"source":"compact"`; a subsequent read-only prompt
-  on the same session id completed normally.
+  `SessionStart` (`"source":"compact"`, again only via the `/tmp` stdin-reading
+  debug copy); a subsequent read-only prompt on the same session id completed
+  normally.
 - Cancellation (approximation): SIGINT sent to a `claude -p` process mid
   `Bash` call produced `"terminal_reason":"aborted_tools"` and no
   `PostToolUse`/`Stop` record — this is a process-signal approximation of
@@ -126,19 +143,36 @@ directly for these calls). Full commands and raw log excerpts are in
 the interactive TUI, the `/resume` picker UI, and running `/compact`
 inside a live interactive session were not exercised; the evidence above
 substitutes `-p`/`--resume`/SIGINT calls that approximate but do not
-prove those exact interactive code paths. Separately, the installed
-Claude Code build silently discards `Stop`/`SubagentStop`
-`hookSpecificOutput` that omits the (undocumented-here) required
-`hookEventName` field — the shipped `record-hook.sh` plain acknowledgement
-omits it, and the probe's "exactly one continuation" bound depends on
-that drop; a schema-corrected copy of the hook was observed to keep
-re-triggering `Stop` (bounded, self-terminating, but no longer exactly
-one continuation). See the task-5 report for the reproduction.
+prove those exact interactive code paths. 
+
+**`hookSpecificOutput` requires `hookEventName` on Claude Code 2.1.246.**
+On this build, **every** `hookSpecificOutput` object — for every hook event,
+not just `Stop`/`SubagentStop` — must contain a `hookEventName` field, or the
+runtime silently discards the whole payload (non-fatal: stderr logs
+`Hook JSON output validation failed — hookSpecificOutput is missing required
+field "hookEventName"` and the session continues). `record-hook.sh` emits
+`{"hookSpecificOutput":{"additionalContext":"M0_CLAUDE_<event>"}}` without it,
+so the injected context was dropped for **all six probed events:
+`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SubagentStart`,
+`SubagentStop`, and every `Stop` after the first**. (The `hookEventName` key in
+the probe's JSONL *log lines* is a top-level log field, not the one the
+validator wants — that one must sit inside `hookSpecificOutput`.) The probe's
+"exactly one continuation" bound depends on that drop; a schema-corrected
+`/tmp` copy of the hook kept re-triggering `Stop` (9 records, self-terminating,
+but no longer exactly one continuation).
+
+**Also not run.** `stop_hook_active` (the runtime's reentrancy flag) was never
+observed — `record-hook.sh` does not read hook stdin. Hook composition with
+pre-existing user/project hooks was never tested: every run used
+`--plugin-dir` in isolation, and the one run that could have collided used
+`--setting-sources project` to exclude the operator's global hooks. A scoped
+worker in a **separate worktree** was never run either; parent and worker
+always shared one fixture directory.
 
 | Runtime | Action | Required log events | Manual observation |
 | --- | --- | --- | --- |
-| Pi | normal prompt | `session_start`, `before_agent_start`, `agent_end`, `agent_settled` | labelled policy message appears |
+| Pi | normal prompt | `session_start`, `before_agent_start`, `agent_end`, `agent_settled` | labelled policy message appears (unverified — needs a TTY) |
 | Pi | `m0_probe_exec` | `process_probe`, `tool_execution_end` | output is `M0_PROCESS_OK` |
-| Claude | read prompt | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | injected context is present |
+| Claude | read prompt | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | hooks fire; injected context is **dropped** on 2.1.246 |
 | Claude | worker task | `SubagentStart`, `SubagentStop` | worker returns `M0_CLAUDE_WORKER_OK` |
 | Claude | first stop | two `Stop` events | exactly one continuation occurs |
