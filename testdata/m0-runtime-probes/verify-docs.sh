@@ -14,7 +14,7 @@ require '**Not delivered** on 2.1.246' "$compat"
 require 'M3 (Claude Code plugin) must include `hookEventName` inside **every** `hookSpecificOutput`' "$compat"
 require '## Unproven M0 points' "$compat"
 require '**State:** In progress' "$progress"
-require 'Pi policy delivery, queued follow-up, cancellation, compaction, and worker-extension loading are implemented but not live-verified.' "$progress"
+require 'Hook firing, process invocation, queued follow-up, cancellation, and compaction now have live evidence; Pi policy delivery and worker-extension loading remain unproven.' "$progress"
 require 'Claude `additionalContext` delivery is disproven for the current probe on 2.1.246' "$progress"
 
 printf '%s\n' 'PASS: M0 documentation self-check'
