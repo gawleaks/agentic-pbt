@@ -40,6 +40,17 @@
 
 **Current status:** `docs/compatibility/runtime-integration-m0.md` records 15 capability rows: 7 live, 3 partial or hook-firing-only, and 5 not run. M0 stays **In progress**, not Complete. Pi policy delivery, worker loading, and separate-worktree behavior still need live evidence. Claude `stop_hook_active`, hook composition, interactive cancellation/resume/compaction, and separate-worktree workers also remain unproven. Claude context delivery is now live-verified after adding required `hookSpecificOutput.hookEventName`. Decision recorded: **proceed with documented limitation** — M1 may proceed; M2/M3 must not assume unproven behavior.
 
+## M0 remaining-task ownership
+
+- [ ] **Developer (interactive Pi):** prove a discriminating policy-delivery marker reaches the model, not merely that `before_agent_start` fired.
+- [ ] **Developer (interactive Pi):** launch a read-only worker and determine whether it inherits the parent probe; repeat with separate parent/worker Git worktrees.
+- [ ] **Developer (interactive Claude):** inspect and record `stop_hook_active` from hook stdin, then verify its effect on Stop-loop protection.
+- [ ] **Developer (interactive Claude):** run the plugin alongside existing user/project hooks and record whether hooks compose correctly.
+- [ ] **Developer (interactive Claude):** test Escape cancellation, `/resume` picker, and `/compact` in the TUI.
+- [ ] **Developer (interactive Claude):** run the scoped `m0-worker` from a separate worktree and confirm parent/worker evidence remains scoped.
+- [ ] **Agent:** update probes, local contract checks, and documentation when an interactive result exposes a gap.
+- [ ] **Agent:** record developer-provided results in `docs/compatibility/runtime-integration-m0.md`, rerun offline checks, and commit the documentation update as `gawleaks <cyber@gawliknet.eu>`.
+
 ### M1 — Go core with Python testing vertical slice
 
 **State:** Not started
