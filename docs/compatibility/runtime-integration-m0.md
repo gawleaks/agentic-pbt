@@ -31,10 +31,10 @@
 | Pi | queued follow-up, cancellation, and compaction | Live | Interactive Pi validation on 2026-09-16: `follow_up_queued`/`agent_settled` assertion passed; `cancellation_probe` recorded `killed:true`, `aborted:true`; after the compaction-lifecycle probe update, `session_before_compact` and `session_compact` assertion passed. | The run proves these three behaviors in the M0 fixture only. Policy delivery, worker loading, separate-worktree behavior, and duplicate-event handling remain unproven. |
 | Pi | separately launched worker policy loading | Not run | None | Requires starting Pi with both `probe.ts` and Pi's installed `examples/extensions/subagent/` example and delegating a read-only task, then observing whether the worker process auto-loads the parent probe or needs an explicit `-e`. Not attempted in any task. |
 | Pi | worker launched in a separate worktree | Not run | None | Spec M2 requires separate-worktree parent verification. No probe exists for it and no session has been run; the fixture (`create-fixture.sh`) creates a single standalone Git repository, not a linked worktree pair. |
-| Claude Code | `SessionStart` / `UserPromptSubmit` hooks fire | Live — hook firing only | [E3](#e3-claude-prompt-lifecycle): log has `SessionStart`, `UserPromptSubmit`, `PostToolUse`, two `Stop` records | Firing and recording are proven. **Context delivery is not** — see the `additionalContext` row below. As with Pi, the `M0_CLAUDE_PROMPT_OK` reply was dictated by the prompt and does not discriminate injected from non-injected turns. |
+| Claude Code | `SessionStart` / `UserPromptSubmit` hooks fire | Live | [E3](#e3-claude-prompt-lifecycle): log has `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and two `Stop` records; the 2026-09-17 interactive run also confirmed context delivery. | The original `M0_CLAUDE_PROMPT_OK` response was non-discriminating. Context delivery became live evidence only after the probe emitted required `hookSpecificOutput.hookEventName`. |
 | Claude Code | `PostToolUse` hook fires | Live — hook firing only | [E3](#e3-claude-prompt-lifecycle): `PostToolUse` recorded in the same run | The M0 probe does not implement content-staleness detection — that is an M1+ `pbt` concept, not part of this fixture. This row confirms only that the `PostToolUse` hook itself fires and is recorded; no stale-marker signal exists yet to observe. |
-| Claude Code | injected `additionalContext` reaches the session | **Not delivered** on 2.1.246 | [E5](#e5-claude-hookspecificoutput-schema-rejection): stderr `Hook JSON output validation failed — hookSpecificOutput is missing required field "hookEventName"` | On Claude Code 2.1.246 **every** `hookSpecificOutput` object must contain a `hookEventName` field, for every hook event, or the whole payload is silently discarded (non-fatal; the hook call still succeeds and the session continues). `record-hook.sh` emits `{"hookSpecificOutput":{"additionalContext":"M0_CLAUDE_<event>"}}` with no `hookEventName`, so the injected context was dropped for **all six probed events: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SubagentStart`, `SubagentStop`, and every `Stop` after the first**. (The `hookEventName` key present in the probe's JSONL *log lines* is a top-level log field — it is not the one the validator requires, which must sit inside `hookSpecificOutput`.) No M0 run has demonstrated context actually reaching a Claude session. |
-| Claude Code | Stop bounded continuation | Live, with caveat — **not an unconditional guarantee** | [E4](#e4-claude-bounded-stop): 4 independent live runs, each producing exactly 2 `Stop` records (first returns `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}`, second returns the plain acknowledgement) | The bound depends on the schema rejection above: the plain acknowledgement is one of the discarded payloads, and that drop is what keeps the run bounded at exactly one continuation. A schema-corrected copy of the hook (tested only in a throwaway `/tmp` copy, never committed) re-triggered `Stop` 9 times before settling. The result is contingent on this build's hook-validation behavior, not a property `record-hook.sh` enforces on its own. |
+| Claude Code | injected `additionalContext` reaches the session | Live | Interactive run on 2026-09-17: Claude listed `M0_CLAUDE_SessionStart`, `M0_CLAUDE_UserPromptSubmit`, and `M0_CLAUDE_PostToolUse` verbatim after reading `input.txt`; the associated log recorded `SessionStart`, `UserPromptSubmit`, and `PostToolUse`. | Claude Code 2.1.246 requires `hookEventName` inside every `hookSpecificOutput`. The probe now emits the current event name; later `Stop` and `SubagentStop` events omit `additionalContext` to avoid triggering another turn. |
+| Claude Code | Stop bounded continuation | Live | The 2026-09-17 interactive run recorded two `Stop` events, with the first returning `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` and the second ending normally. | The corrected probe enforces the bound with its marker: later `Stop`/`SubagentStop` responses emit only `hookEventName`, not `additionalContext`. `stop_hook_active` remains untested. |
 | Claude Code | `stop_hook_active` reentrancy flag | Not run | None | `record-hook.sh` does not read hook stdin, so the runtime-supplied `stop_hook_active` field was never observed, and no run tested whether honoring it terminates a continuation loop. Required before M3 can rely on it for stop-loop protection. |
 | Claude Code | composition with pre-existing user/project hooks | Not run | None | All probe runs used `--plugin-dir` in isolation; the one run that touched the operator's own global hooks used `--setting-sources project` to *exclude* them. Whether plugin hooks compose with (rather than replace or conflict with) existing user/project hooks for the same event is untested. |
 | Claude Code | scoped worker hooks | Live | [E6](#e6-claude-scoped-worker): log has `SubagentStart`/`SubagentStop`; `subagent_stats` shows `"spawned":1`, `"completed":1`, `"failed":0`; transcript shows the worker itself replied `M0_CLAUDE_WORKER_OK` | Claude Code has no separate "worker launch command" distinct from the `Task` tool's subagent dispatch. The worker's reply string is fixed in the agent definition, so it is discriminating for *which* agent answered, not for context injection. |
@@ -119,13 +119,13 @@ Observed on stderr under `--include-hook-events` (non-fatal):
 Hook JSON output validation failed — hookSpecificOutput is missing required field "hookEventName"
 ```
 
-Emitted for every `hookSpecificOutput` payload `record-hook.sh` produces — i.e. all
-six events: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SubagentStart`,
-`SubagentStop`, and each `Stop` after the first. A throwaway `/tmp` copy of the
-plugin that added `hookEventName` inside every `hookSpecificOutput` (run with
-`--setting-sources project` to exclude the operator's global hooks) produced **9**
-`Stop` records instead of 2 before self-terminating (~14s wall clock; `num_turns`
-stayed at 2). No committed file was changed.
+This was emitted for every `hookSpecificOutput` payload in the original probe — i.e.
+`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SubagentStart`, `SubagentStop`,
+and each `Stop` after the first. The probe was then corrected to include the current
+event as `hookSpecificOutput.hookEventName`; on 2026-09-17, an interactive run
+confirmed context delivery for `SessionStart`, `UserPromptSubmit`, and `PostToolUse`.
+Later `Stop`/`SubagentStop` responses now contain only `hookEventName`, avoiding the
+previous repeated-feedback behavior.
 
 ### E6 Claude scoped worker
 
@@ -239,33 +239,30 @@ Nothing in this list has live evidence. M2/M3 must not assume any of it.
 5. Pi compaction (`/compact`).
 6. Pi separately launched worker policy loading.
 7. Pi worker in a separate worktree.
-8. Claude `additionalContext` **delivery** for all six probed events — undelivered on
-   2.1.246 because `hookSpecificOutput` lacks `hookEventName`.
-9. Claude `stop_hook_active` reentrancy flag.
-10. Claude hook composition with pre-existing user/project hooks.
-11. Claude interactive Escape-cancel inside the TUI.
-12. Claude interactive `/resume` picker UI.
-13. Claude interactive `/compact` inside a live TUI turn.
-14. Claude scoped worker in a separate worktree.
-15. Claude resume/compact `source` field via the *shipped* hook (seen only through a
+8. Claude `stop_hook_active` reentrancy flag.
+9. Claude hook composition with pre-existing user/project hooks.
+10. Claude interactive Escape-cancel inside the TUI.
+11. Claude interactive `/resume` picker UI.
+12. Claude interactive `/compact` inside a live TUI turn.
+13. Claude scoped worker in a separate worktree.
+14. Claude resume/compact `source` field via the *shipped* hook (seen only through a
     throwaway `/tmp` debug copy).
 
 ## M1/M2/M3 consequences
 
 - M1 (Go core, Python testing vertical slice) has no Pi/Claude runtime dependency; nothing in this record blocks it.
 - M2 (Pi package) must not assume policy-message delivery, queued follow-up, cancellation, compaction, worker-extension policy loading, or separate-worktree workers behave as sketched in the spec — none has live evidence. Run the deferred manual Pi session (see `testdata/m0-runtime-probes/README.md`) first. Any future policy-injection probe must use a marker carried **in the injected text itself**, not one the prompt dictates, or the result will not discriminate.
-- M3 (Claude Code plugin) must include `hookEventName` inside **every** `hookSpecificOutput` object it emits, for every hook event; on Claude Code 2.1.246 the runtime silently discards any payload that omits it. No M0 run has proven that hook-injected context reaches a Claude session.
-- M3 must not treat "exactly one Stop continuation" as a guarantee `record-hook.sh` provides on its own — it is currently a side effect of that same schema rejection. Real stop-loop protection should use an explicit self-enforced bound (counter or marker file, as this probe does for the *first* `Stop`) and should read `stop_hook_active` from hook stdin, which is itself untested here.
+- M3 (Claude Code plugin) must include `hookEventName` inside **every** `hookSpecificOutput` object it emits, for every hook event; on Claude Code 2.1.246 the runtime silently discards any payload that omits it. M0 now proves context delivery for `SessionStart`, `UserPromptSubmit`, and `PostToolUse` when that field is present.
+- M3 should use an explicit self-enforced Stop bound (the M0 probe uses a marker file for the first `Stop` and emits no later `additionalContext`) and should read `stop_hook_active` from hook stdin, which is itself untested here.
 - M3 should design scoped worker hooks around Claude Code's `Task`-tool subagent dispatch — there is no separate "worker launch command" to substitute — and must still prove the separate-worktree and hook-composition cases, both unprobed.
 - M3 should plan for stdin-based hook-input capture (the `source` field for resume/compact detection, and `stop_hook_active`) since the current probe script does not read hook stdin.
 - Per Task 4's deferred note: `claude/verify-plugin.sh`'s `claude plugin validate` check runs unconditionally whenever `claude` is on `PATH` (unlike the Pi live check, which needs an explicit env var). Acceptable for M0 since it is schema-only and offline, but M2/M3 CI should decide deliberately whether plugin-schema validation runs on every CI machine or stays gated.
 
 ## Decision
 
-M0 is not complete. Of the 15 capability rows above, 6 are Live, 3 are Partial or
-hook-firing-only, 1 is a confirmed negative (`additionalContext` not delivered), and
-5 are Not run. The [Unproven M0 points](#unproven-m0-points) list enumerates 15 open
-items. Per the exit criteria, M0 stays **In progress** until those manual sessions
+M0 is not complete. Of the 15 capability rows above, 7 are Live, 3 are Partial or
+hook-firing-only, and 5 are Not run. The [Unproven M0 points](#unproven-m0-points)
+list enumerates 14 open items. Per the exit criteria, M0 stays **In progress** until those manual sessions
 are run and recorded.
 
 **Decision: proceed with documented limitation.** M1 (Go core), which has no Pi/Claude

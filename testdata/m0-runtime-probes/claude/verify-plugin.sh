@@ -38,8 +38,8 @@ out="$(M0_PROBE_LOG="$log" M0_PROBE_STOP_MARKER="$marker" "$dir/scripts/record-h
 grep -Fq '"event":"SessionStart"' "$log" || { echo "FAIL: SessionStart not recorded" >&2; exit 1; }
 grep -Fq '"runtime":"claude"' "$log" || { echo "FAIL: runtime field missing" >&2; exit 1; }
 case "$out" in
-  *'"additionalContext":"M0_CLAUDE_SessionStart"'*) ;;
-  *) echo "FAIL: unexpected SessionStart stdout: $out" >&2; exit 1 ;;
+    *'"hookEventName":"SessionStart"'*'"additionalContext":"M0_CLAUDE_SessionStart"'*) ;;
+    *) echo "FAIL: unexpected SessionStart stdout: $out" >&2; exit 1 ;;
 esac
 
 [ ! -e "$marker" ] || { echo "FAIL: marker should not exist before first Stop" >&2; exit 1; }
@@ -60,8 +60,22 @@ case "$out" in
   *'"decision":"block"'*) echo "FAIL: second Stop must not request another block: $out" >&2; exit 1 ;;
 esac
 case "$out" in
-  *'"additionalContext":"M0_CLAUDE_Stop"'*) ;;
-  *) echo "FAIL: second Stop did not fall through to the plain ack: $out" >&2; exit 1 ;;
+    *'"hookEventName":"Stop"'*) ;;
+    *) echo "FAIL: second Stop missing hookEventName: $out" >&2; exit 1 ;;
+esac
+case "$out" in
+    *'"additionalContext"'*) echo "FAIL: second Stop must not inject additionalContext: $out" >&2; exit 1 ;;
+esac
+
+out="$(M0_PROBE_LOG="$log" M0_PROBE_STOP_MARKER="$marker" \
+    "$dir/scripts/record-hook.sh" SubagentStop)"
+
+case "$out" in
+    *'"hookEventName":"SubagentStop"'*) ;;
+    *) echo "FAIL: SubagentStop missing hookEventName: $out" >&2; exit 1 ;;
+esac
+case "$out" in
+    *'"additionalContext"'*) echo "FAIL: SubagentStop must not inject additionalContext: $out" >&2; exit 1 ;;
 esac
 
 echo "PASS: record-hook.sh contract (env/arg validation, JSONL shape, bounded one-Stop marker)"

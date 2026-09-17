@@ -14,4 +14,11 @@ if [ "$event" = "Stop" ] && [ ! -e "$M0_PROBE_STOP_MARKER" ]; then
   exit 0
 fi
 
-printf '%s\n' "{\"hookSpecificOutput\":{\"additionalContext\":\"M0_CLAUDE_${event}\"}}"
+ case "$event" in
+     Stop|SubagentStop)
+       printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"${event}\"}}"
+       ;;
+     *)
+       printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"${event}\",\"additionalContext\":\"M0_CLAUDE_${event}\"}}"
+       ;;
+   esac

@@ -109,19 +109,16 @@ directly for these calls). Full commands and raw log excerpts are inlined in the
 [Inlined evidence](../../docs/compatibility/runtime-integration-m0.md#inlined-evidence)
 section (the `.superpowers/` task reports are not tracked in Git).
 
-- Prompt lifecycle (hook firing only): a `Read input.txt` prompt recorded
-  `SessionStart`, `UserPromptSubmit`, and `PostToolUse`. The hooks fired and
-  were logged; their `M0_CLAUDE_<event>` `additionalContext` was **not
-  delivered** to the session — see the schema note below. The prompt's own
-  `M0_CLAUDE_PROMPT_OK` reply is dictated by the prompt and proves nothing
-  about injection.
-- Bounded Stop: the first `Stop` returned
-  `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` and created the
-  marker; the run continued for exactly one more turn, then the second
-  `Stop` ended it normally. Reproduced across 4 independent live runs
-  with exactly 2 `Stop` records each — **not an unconditional guarantee**:
-  the bound depends on the schema rejection described below, not on
-  anything `record-hook.sh` enforces. See the schema note below.
+- Prompt lifecycle: a `Read input.txt` prompt recorded `SessionStart`,
+  `UserPromptSubmit`, and `PostToolUse`. After the probe was corrected to
+  include `hookSpecificOutput.hookEventName`, the interactive 2026-09-17 run
+  confirmed delivery: Claude listed `M0_CLAUDE_SessionStart`,
+  `M0_CLAUDE_UserPromptSubmit`, and `M0_CLAUDE_PostToolUse` verbatim.
+- Bounded Stop: the first `Stop` returns
+  `{"decision":"block","reason":"M0_PROBE_STOP_ONCE"}` and creates the
+  marker; later `Stop` responses include only `hookEventName`, so they do not
+  inject another turn. The 2026-09-17 interactive run recorded two `Stop`
+  events and then ended. `stop_hook_active` remains untested.
 - Worker boundary: `Use m0-worker and report its response.` produced
   `SubagentStart`/`SubagentStop`, and the transcript shows the worker
   itself replying `M0_CLAUDE_WORKER_OK` before the parent relayed it.
@@ -150,16 +147,12 @@ On this build, **every** `hookSpecificOutput` object — for every hook event,
 not just `Stop`/`SubagentStop` — must contain a `hookEventName` field, or the
 runtime silently discards the whole payload (non-fatal: stderr logs
 `Hook JSON output validation failed — hookSpecificOutput is missing required
-field "hookEventName"` and the session continues). `record-hook.sh` emits
-`{"hookSpecificOutput":{"additionalContext":"M0_CLAUDE_<event>"}}` without it,
-so the injected context was dropped for **all six probed events:
-`SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SubagentStart`,
-`SubagentStop`, and every `Stop` after the first**. (The `hookEventName` key in
-the probe's JSONL *log lines* is a top-level log field, not the one the
-validator wants — that one must sit inside `hookSpecificOutput`.) The probe's
-"exactly one continuation" bound depends on that drop; a schema-corrected
-`/tmp` copy of the hook kept re-triggering `Stop` (9 records, self-terminating,
-but no longer exactly one continuation).
+field "hookEventName"` and the session continues). The original probe omitted
+that field and dropped context for all six probed events. The corrected probe
+emits the current event as `hookSpecificOutput.hookEventName`; the 2026-09-17
+interactive run verified context delivery for `SessionStart`,
+`UserPromptSubmit`, and `PostToolUse`. Later `Stop`/`SubagentStop` responses
+intentionally omit `additionalContext` to avoid feedback loops.
 
 **Also not run.** `stop_hook_active` (the runtime's reentrancy flag) was never
 observed — `record-hook.sh` does not read hook stdin. Hook composition with
@@ -173,6 +166,6 @@ always shared one fixture directory.
 | --- | --- | --- | --- |
 | Pi | normal prompt | `session_start`, `before_agent_start`, `agent_end`, `agent_settled` | labelled policy message appears (unverified — needs a TTY) |
 | Pi | `m0_probe_exec` | `process_probe`, `tool_execution_end` | output is `M0_PROCESS_OK` |
-| Claude | read prompt | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | hooks fire; injected context is **dropped** on 2.1.246 |
+| Claude | read prompt | `SessionStart`, `UserPromptSubmit`, `PostToolUse` | hooks fire and corrected injected context reaches Claude |
 | Claude | worker task | `SubagentStart`, `SubagentStop` | worker returns `M0_CLAUDE_WORKER_OK` |
 | Claude | first stop | two `Stop` events | exactly one continuation occurs |
