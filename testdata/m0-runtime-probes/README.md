@@ -45,12 +45,12 @@ log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi.XXXXXX")"
 testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
 ```
 
-- Policy delivery: the probe's injected text is
-  `M0 probe: policy injection reached this Pi turn.` and carries no marker.
-  A `pi -p "Reply exactly: M0_PI_POLICY_OK"` run does **not** prove delivery —
-  the model emits that string from the prompt alone, extension or not. To
-  prove delivery, put a marker inside the injected text and ask the agent to
-  quote it back, or read it off the TUI transcript by hand.
+- Policy delivery: the probe injects a harmless instruction: when the user says
+  `M0 policy delivery check`, reply exactly `M0_PI_POLICY_DELIVERED`. Submit
+  that exact prompt in a live session and require that exact reply. This is
+  discriminating because the reply token appears only in the injected policy,
+  not in the user prompt. Do not ask the model to quote hidden policy text;
+  models may correctly refuse that request.
 - Continuation: submit one prompt, then run `/m0-probe-follow-up` while Pi
   is idle. Expect exactly one labelled follow-up turn, reply
   `M0_PI_FOLLOW_UP_OK`, and `agent_settled` only after that follow-up turn

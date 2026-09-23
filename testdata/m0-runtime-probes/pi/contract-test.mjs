@@ -50,6 +50,11 @@ else ok("registers m0_probe_wait tool");
 if (!events.has("session_before_compact")) fail("registers session_before_compact handler");
 else ok("registers session_before_compact handler");
 
+const policy = await events.get("before_agent_start")({}, { cwd: "/tmp/m0-probe-contract-cwd" });
+if (policy?.message?.content !== 'M0 validation instruction: if the user says "M0 policy delivery check", reply exactly "M0_PI_POLICY_DELIVERED".')
+  fail("before_agent_start does not inject the M0 policy delivery instruction");
+else ok("before_agent_start injects the M0 policy delivery instruction");
+
 if (failed) {
   console.error("FAIL: probe.ts contract checks");
   process.exit(1);

@@ -29,7 +29,7 @@ export default function (pi: ExtensionAPI) {
     return {
       message: {
         customType: "agentic-pbt-m0-policy",
-        content: "M0 probe: policy injection reached this Pi turn.",
+        content: 'M0 validation instruction: if the user says "M0 policy delivery check", reply exactly "M0_PI_POLICY_DELIVERED".',
         display: true,
       },
     };

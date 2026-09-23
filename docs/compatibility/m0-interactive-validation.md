@@ -19,14 +19,16 @@ testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
 
 In Pi:
 
-1. Submit any short prompt. Confirm the labelled `agentic-pbt-m0-policy` message
-   is visible in the transcript. This proves TUI injection, but not necessarily
-   model delivery.
-2. Submit `/m0-probe-follow-up` while Pi is idle. Confirm exactly one follow-up
+1. Submit `M0 policy delivery check`. Require the exact reply
+   `M0_PI_POLICY_DELIVERED`. This proves compliance with a harmless injected
+   policy instruction without asking the model to disclose hidden policy text.
+2. Submit any short prompt. Confirm the labelled `agentic-pbt-m0-policy` message
+   is visible in the transcript.
+3. Submit `/m0-probe-follow-up` while Pi is idle. Confirm exactly one follow-up
    turn occurs and it replies `M0_PI_FOLLOW_UP_OK`.
-3. Ask the agent to call `m0_probe_wait`, then press Escape while it runs.
+4. Ask the agent to call `m0_probe_wait`, then press Escape while it runs.
    Confirm control returns and no follow-up was injected.
-4. In a separate session, send one prompt and run `/compact`. Confirm the session
+5. In a separate session, send one prompt and run `/compact`. Confirm the session
    remains usable afterward.
 
 After exiting Pi, inspect the evidence:

@@ -22,19 +22,20 @@ log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-policy.XXXXXX")"
 testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
 ```
 
-Submit this prompt exactly; do not include the policy text or marker in it:
+Submit this prompt exactly:
 
 ```text
-Quote the exact M0 policy message you received. Reply with only that message.
+M0 policy delivery check
 ```
 
 Pass condition: Pi replies exactly:
 
 ```text
-M0 probe: policy injection reached this Pi turn.
+M0_PI_POLICY_DELIVERED
 ```
 
-Exit Pi, then retain the log evidence:
+This tests compliance with a harmless injected instruction; it does not ask Pi
+to reveal hidden policy text. Exit Pi, then retain the log evidence:
 
 ```bash
 testdata/m0-runtime-probes/assert-events.sh "$log" session_start before_agent_start \
