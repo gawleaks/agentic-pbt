@@ -25,23 +25,62 @@ only after a permitted worker model is configured.
 
 ## 1. Capture Claude `stop_hook_active`
 
-The current hook recorder does not retain hook stdin. Make a temporary local copy
-of the Claude plugin under `/tmp` and instrument only that copy. Immediately after
-`event=...` in its `scripts/record-hook.sh`, add:
-
-```sh
-cat > "${M0_PROBE_LOG}.${event}.stdin"
-```
-
-Start Claude with the temporary plugin and trigger a Stop. After the session exits:
+Use a disposable plugin copy; hook stdin can contain session details and must not
+be committed:
 
 ```bash
-rg '"stop_hook_active":(true|false)' "${log}.Stop.stdin"
+cd /path/to/agentic-pbt/.worktrees/m0-runtime-probes
+plugin="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-claude-plugin.XXXXXX")"
+cp -R testdata/m0-runtime-probes/claude/. "$plugin"
+fixture="$(testdata/m0-runtime-probes/create-fixture.sh)"
+log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-claude-stop-active.XXXXXX")"
 ```
 
-Record whether the field is present and its value on the first and later Stop
-calls. Do not commit captured hook input; it can contain session details. If the
-field is absent, record `unsupported or absent on tested runtime`.
+In `$plugin/scripts/record-hook.sh`, immediately after the two `M0_PROBE_...`
+environment checks, add the following. It preserves a separate stdin file for
+each hook process:
+
+```sh
+stdin_file="${M0_PROBE_LOG}.${event}.$$.stdin"
+cat > "$stdin_file"
+```
+
+Then add this block immediately **before** the existing first-Stop block. On a
+re-entrant Stop, it records that the flag was honored and allows Claude to stop:
+
+```sh
+if [ "$event" = "Stop" ] && grep -Fq '"stop_hook_active":true' "$stdin_file"; then
+  printf '{"timestamp":"%s","runtime":"claude","event":"stop_hook_active_allow"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$M0_PROBE_LOG"
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"Stop"}}'
+  exit 0
+fi
+```
+
+Launch an interactive session with only the temporary plugin:
+
+```bash
+: > "$log"
+M0_PROBE_LOG="$log" \
+M0_PROBE_STOP_MARKER="${log}.stop-once" \
+claude --plugin-dir "$plugin" --debug hooks
+```
+
+Submit a short read-only prompt and let Claude finish. The first `Stop` should
+block once; the re-entrant `Stop` should be allowed by the new guard. After exit:
+
+```bash
+rg -n '"stop_hook_active"' "${log}".Stop.*.stdin || true
+rg -n '"event":"stop_hook_active_allow"' "$log" || true
+```
+
+Pass condition: a captured `Stop` input contains `"stop_hook_active":true` and
+the log contains `stop_hook_active_allow`. If the field is absent or never true,
+record that observed limitation instead. Remove the disposable files afterward:
+
+```bash
+rm -rf "$plugin" "$fixture" "$log" "${log}.stop-once" "${log}".*.stdin
+```
 
 ## 2. Test Claude hook composition
 
