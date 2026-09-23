@@ -31,19 +31,19 @@
 **Remaining work:**
 
 - [x] Record installed Pi and Claude Code versions in a compatibility matrix. — `docs/compatibility/runtime-integration-m0.md` (Pi 0.81.1, Claude Code 2.1.246, Node v24.16.0, macOS 26.6.2).
-- [ ] Create a disposable Pi fixture that proves policy injection, tool/process invocation, end-of-run feedback, cancellation, queued-input behavior, and worker-extension loading. — `testdata/m0-runtime-probes/pi/` exists. Hook firing, process invocation, queued follow-up, cancellation, and compaction now have live evidence; Pi policy delivery and worker-extension loading remain unproven.
+- [x] Create a disposable Pi fixture that proves policy injection, tool/process invocation, end-of-run feedback, cancellation, and queued-input behavior. — `testdata/m0-runtime-probes/pi/` has live evidence for policy delivery, hook firing, process invocation, queued follow-up, cancellation, and compaction. Worker-extension loading is unsupported in the current Pi setup because no permitted worker launcher/model is configured.
 - [x] Create a disposable Claude fixture that records `SessionStart`, `UserPromptSubmit`, `SubagentStart`, `PostToolUse`, `Stop`, and `SubagentStop` behavior. — `testdata/m0-runtime-probes/claude/` recorded all six events. Claude `additionalContext` delivery is live-verified with valid `hookEventName` output.
 - [ ] Exercise compaction, cancellation, duplicate callbacks, stop-loop protection, and separate-worktree workers where supported. — Claude compaction/resume have live evidence (with a caveat: the shipped hook can't self-report the resume/compact `source` field); Claude cancellation only has a SIGINT approximation, not real interactive Escape-cancel. Pi compaction, cancellation, and worker boundary have **no live evidence** — only unit-mocked contract tests.
 - [x] Record what was locally exercised, what was simulated, and each known runtime limitation. — `docs/compatibility/runtime-integration-m0.md`.
 
 **Exit evidence:** Versioned compatibility record and reproducible probe results for both runtimes. No full integration is started until the required lifecycle assumptions are confirmed or documented as limitations.
 
-**Current status:** `docs/compatibility/runtime-integration-m0.md` records 15 capability rows: 7 live, 3 partial or hook-firing-only, and 5 not run. M0 stays **In progress**, not Complete. Pi policy delivery, worker loading, and separate-worktree behavior still need live evidence. Claude `stop_hook_active`, hook composition, interactive cancellation/resume/compaction, and separate-worktree workers also remain unproven. Claude context delivery is now live-verified after adding required `hookSpecificOutput.hookEventName`. Decision recorded: **proceed with documented limitation** — M1 may proceed; M2/M3 must not assume unproven behavior.
+**Current status:** `docs/compatibility/runtime-integration-m0.md` records 15 capability rows: 8 live, 2 partial, 3 not run, and 2 unsupported in the current setup. M0 stays **In progress**, not Complete. Pi worker loading and separate-worktree behavior are documented as unsupported because no permitted worker launcher/model is configured. Claude `stop_hook_active`, hook composition, interactive cancellation/resume/compaction, and separate-worktree workers remain unproven. Claude context delivery is live-verified after adding required `hookSpecificOutput.hookEventName`. Decision recorded: **proceed with documented limitation** — M1 may proceed; M2/M3 must not assume unproven behavior.
 
 ## M0 remaining-task ownership
 
-- [ ] **Developer (interactive Pi):** prove a discriminating policy-delivery marker reaches the model, not merely that `before_agent_start` fired.
-- [ ] **Developer (interactive Pi):** launch a read-only worker and determine whether it inherits the parent probe; repeat with separate parent/worker Git worktrees.
+- [x] **Developer (interactive Pi):** proved a discriminating policy-delivery marker reaches the model: `M0 policy delivery check` produced `M0_PI_POLICY_DELIVERED`.
+- [x] **Developer/Agent (Pi):** documented worker and separate-worktree checks as unsupported in the current setup: no permitted worker launcher/model is configured; Pi's bundled worker requires unapproved Anthropic authentication.
 - [ ] **Developer (interactive Claude):** inspect and record `stop_hook_active` from hook stdin, then verify its effect on Stop-loop protection.
 - [ ] **Developer (interactive Claude):** run the plugin alongside existing user/project hooks and record whether hooks compose correctly.
 - [ ] **Developer (interactive Claude):** test Escape cancellation, `/resume` picker, and `/compact` in the TUI.

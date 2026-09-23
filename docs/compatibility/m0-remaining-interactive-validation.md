@@ -12,84 +12,18 @@ cd /path/to/agentic-pbt/.worktrees/m0-runtime-probes
 M0 remains **in progress** until these checks are recorded as passed, unsupported,
 or limited by an observed runtime constraint.
 
-## 1. Prove Pi policy delivery to the model
+## Pi status
 
-Start a fresh Pi session:
+Policy delivery is complete: the interactive prompt `M0 policy delivery check`
+produced the exact policy-directed response `M0_PI_POLICY_DELIVERED`.
 
-```bash
-fixture="$(testdata/m0-runtime-probes/create-fixture.sh)"
-log="$(mktemp "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-policy.XXXXXX")"
-testdata/m0-runtime-probes/pi/run.sh "$fixture" "$log"
-```
+Pi worker inheritance and separate-worktree validation are unsupported in the
+current setup. There is no installed Pi worker launcher or agent definition; Pi's
+bundled worker example is fixed to an Anthropic model, for which use is not
+approved. Do not install it or use credentials to satisfy this M0 item. Revisit
+only after a permitted worker model is configured.
 
-Submit this prompt exactly:
-
-```text
-M0 policy delivery check
-```
-
-Pass condition: Pi replies exactly:
-
-```text
-M0_PI_POLICY_DELIVERED
-```
-
-This tests compliance with a harmless injected instruction; it does not ask Pi
-to reveal hidden policy text. Exit Pi, then retain the log evidence:
-
-```bash
-testdata/m0-runtime-probes/assert-events.sh "$log" session_start before_agent_start \
-  && echo "PASS: Pi policy hook fired"
-```
-
-Record both the exact reply and the event assertion. The reply proves model
-visibility; the log alone only proves the event handler ran.
-
-## 2. Determine whether a Pi worker inherits the probe
-
-Use the Pi worker/subagent launcher you normally use. Start its parent with the M0
-probe enabled, then assign the worker one read-only request such as:
-
-```text
-Read input.txt and return its exact contents. Do not edit files.
-```
-
-Check the worker's process environment or worker probe log:
-
-- **Inherited:** the worker writes M0 events without explicitly receiving
-  `-e testdata/m0-runtime-probes/pi/probe.ts`.
-- **Not inherited:** it writes no M0 events until the probe is passed explicitly.
-- **Unsupported:** your Pi worker launcher cannot launch a child with an extension.
-
-Record exactly one of those three outcomes. Do not call parent evidence proof for
-worker evidence.
-
-## 3. Repeat the Pi worker check in a separate worktree
-
-Create a disposable child worktree from the M0 branch:
-
-```bash
-parent="$(pwd)"
-child="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-pi-worker.XXXXXX")"
-rm -rf "$child"
-git worktree add "$child" -b m0-pi-worker-validation HEAD
-```
-
-Launch the worker against `$child` and repeat Step 2's read-only task. Record:
-
-- parent worktree path;
-- child worktree path;
-- whether the probe was inherited or explicitly loaded; and
-- that the parent did **not** treat worker evidence as its own integrated result.
-
-Clean up afterward:
-
-```bash
-git worktree remove "$child"
-git branch -D m0-pi-worker-validation
-```
-
-## 4. Capture Claude `stop_hook_active`
+## 1. Capture Claude `stop_hook_active`
 
 The current hook recorder does not retain hook stdin. Make a temporary local copy
 of the Claude plugin under `/tmp` and instrument only that copy. Immediately after
@@ -109,7 +43,7 @@ Record whether the field is present and its value on the first and later Stop
 calls. Do not commit captured hook input; it can contain session details. If the
 field is absent, record `unsupported or absent on tested runtime`.
 
-## 5. Test Claude hook composition
+## 2. Test Claude hook composition
 
 Use a fixture that already has one harmless project or user hook enabled, for
 example a hook that appends `existing-hook-ran` to a temporary log. Start Claude
@@ -123,7 +57,7 @@ Submit a read-only prompt. Pass condition: both the existing hook's log and the
 M0 log contain their expected event entries. Record whether the two hooks ran in a
 stable order, and whether either suppressed the other.
 
-## 6. Test Claude interactive cancellation, resume, and compaction
+## 3. Test Claude interactive cancellation, resume, and compaction
 
 Start the normal M0 Claude session:
 
@@ -152,9 +86,9 @@ testdata/m0-runtime-probes/assert-events.sh "$log" SessionStart
 Add further required events only when they actually occurred. Missing events are
 results to record, not failures to hide.
 
-## 7. Run Claude `m0-worker` in a separate worktree
+## 4. Run Claude `m0-worker` in a separate worktree
 
-Create a disposable worktree as in Step 3, but use a distinct branch name:
+Create a disposable worktree with a distinct branch name:
 
 ```bash
 child="$(mktemp -d "${TMPDIR:-/tmp}/agentic-pbt-m0-claude-worker.XXXXXX")"
@@ -173,7 +107,7 @@ Record the parent and worker paths and state explicitly that worker evidence is
 scoped to the worker; it does not verify the parent's integrated files. Remove the
 child worktree and branch afterward.
 
-## 8. Hand results back for recording
+## 5. Hand results back for recording
 
 For each step, provide:
 

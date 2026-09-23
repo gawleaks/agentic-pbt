@@ -25,12 +25,12 @@
 
 | Runtime | Capability | Live result | Evidence | Limitation / decision |
 | --- | --- | --- | --- | --- |
-| Pi | `before_agent_start` policy hook fires and returns a message | Partial — hook firing only | [E1](#e1-pi-lifecycle-events): log has `session_start`, `before_agent_start`, `agent_end`, `agent_settled` in order | Proves only that the handler ran and returned its `message` object. **Delivery is unproven.** A direct request to quote hidden policy text was refused, so it cannot prove delivery. The probe now injects a harmless conditional instruction: prompt `M0 policy delivery check` must yield `M0_PI_POLICY_DELIVERED`; that live result is still required. No interactive TTY pass has confirmed the labelled (non-user) bubble renders either. |
+| Pi | `before_agent_start` policy hook fires, returns a message, and reaches the model | Live | [E1](#e1-pi-lifecycle-events) records hook firing; [E1a](#e1a-pi-policy-delivery) records the interactive prompt and exact reply | The initial request to quote hidden policy text was correctly refused, so it was not evidence. The current harmless conditional instruction is discriminating: the prompt `M0 policy delivery check` does not contain `M0_PI_POLICY_DELIVERED`, but the model replied with it exactly. The labelled non-user bubble still has no separately recorded TUI observation. |
 | Pi | extension subprocess execution | Live | [E2](#e2-pi-subprocess-probe): log has `process_probe` with `"code":0`, `"stdout":"M0_PROCESS_OK"`, plus `tool_execution_end` | Discriminating: `M0_PROCESS_OK` is written by the child process and captured by `pi.exec()` inside the extension, so the log line cannot be produced by the model alone. The model's own echo of the string is *not* the evidence. |
 | Pi | end-of-run versus settled behavior | Partial | [E1](#e1-pi-lifecycle-events): single-turn live run shows `agent_end` then `agent_settled`, no intervening follow-up | Only the no-continuation case has live evidence. Whether `agent_settled` correctly waits for a queued follow-up turn instead of firing on the first `agent_end` requires the continuation probe below and has not been run. |
-| Pi | queued follow-up, cancellation, and compaction | Live | Interactive Pi validation on 2026-09-16: `follow_up_queued`/`agent_settled` assertion passed; `cancellation_probe` recorded `killed:true`, `aborted:true`; after the compaction-lifecycle probe update, `session_before_compact` and `session_compact` assertion passed. | The run proves these three behaviors in the M0 fixture only. Policy delivery, worker loading, separate-worktree behavior, and duplicate-event handling remain unproven. |
-| Pi | separately launched worker policy loading | Not run | None | Requires starting Pi with both `probe.ts` and Pi's installed `examples/extensions/subagent/` example and delegating a read-only task, then observing whether the worker process auto-loads the parent probe or needs an explicit `-e`. Not attempted in any task. |
-| Pi | worker launched in a separate worktree | Not run | None | Spec M2 requires separate-worktree parent verification. No probe exists for it and no session has been run; the fixture (`create-fixture.sh`) creates a single standalone Git repository, not a linked worktree pair. |
+| Pi | queued follow-up, cancellation, and compaction | Live | Interactive Pi validation on 2026-09-16: `follow_up_queued`/`agent_settled` assertion passed; `cancellation_probe` recorded `killed:true`, `aborted:true`; after the compaction-lifecycle probe update, `session_before_compact` and `session_compact` assertion passed. | The run proves these three behaviors in the M0 fixture only. Worker loading, separate-worktree behavior, and duplicate-event handling remain unproven. |
+| Pi | separately launched worker policy loading | Unsupported in current setup | Local inspection found no Pi extensions or agent definitions. Pi's bundled subagent example hard-codes `model: claude-sonnet-4-5`, which requires unavailable/unapproved Anthropic authentication. | No permitted worker launcher/model is configured, so no child process can be launched for this probe. Revisit only after a permitted Pi worker model is configured. |
+| Pi | worker launched in a separate worktree | Unsupported in current setup | Same worker-launcher limitation as the preceding row. | A separate-worktree worker test cannot run until a permitted worker launcher/model exists. Parent verification is therefore not assumed. |
 | Claude Code | `SessionStart` / `UserPromptSubmit` hooks fire | Live | [E3](#e3-claude-prompt-lifecycle): log has `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and two `Stop` records; the 2026-09-17 interactive run also confirmed context delivery. | The original `M0_CLAUDE_PROMPT_OK` response was non-discriminating. Context delivery became live evidence only after the probe emitted required `hookSpecificOutput.hookEventName`. |
 | Claude Code | `PostToolUse` hook fires | Live — hook firing only | [E3](#e3-claude-prompt-lifecycle): `PostToolUse` recorded in the same run | The M0 probe does not implement content-staleness detection — that is an M1+ `pbt` concept, not part of this fixture. This row confirms only that the `PostToolUse` hook itself fires and is recorded; no stale-marker signal exists yet to observe. |
 | Claude Code | injected `additionalContext` reaches the session | Live | Interactive run on 2026-09-17: Claude listed `M0_CLAUDE_SessionStart`, `M0_CLAUDE_UserPromptSubmit`, and `M0_CLAUDE_PostToolUse` verbatim after reading `input.txt`; the associated log recorded `SessionStart`, `UserPromptSubmit`, and `PostToolUse`. | Claude Code 2.1.246 requires `hookEventName` inside every `hookSpecificOutput`. The probe now emits the current event name; later `Stop` and `SubagentStop` events omit `additionalContext` to avoid triggering another turn. |
@@ -43,7 +43,7 @@
 
 ## Inlined evidence
 
-Marker strings (`M0_PI_POLICY_OK`, `M0_PROCESS_OK`, `M0_CLAUDE_PROMPT_OK`,
+Marker strings (`M0_PI_POLICY_DELIVERED`, `M0_PROCESS_OK`, `M0_CLAUDE_PROMPT_OK`,
 `M0_CLAUDE_WORKER_OK`, `M0_PROBE_STOP_ONCE`) are fixed constants the probes emit or
 the prompts dictate; no prompt content, credentials, session ids, or file contents
 beyond these are reproduced here.
@@ -66,8 +66,25 @@ $ testdata/m0-runtime-probes/assert-events.sh "$log" \
 ```
 
 Log events in order: `session_start`, `before_agent_start`, `agent_end`,
-`agent_settled`. The model replied `M0_PI_POLICY_OK` — dictated by the prompt, so
-non-discriminating (see the row above).
+`agent_settled`. The historical model reply `M0_PI_POLICY_OK` was dictated by the
+prompt, so it is non-discriminating.
+
+### E1a Pi policy delivery
+
+In a fresh interactive Pi session using the current probe, the operator submitted:
+
+```text
+M0 policy delivery check
+```
+
+Pi replied exactly:
+
+```text
+M0_PI_POLICY_DELIVERED
+```
+
+The reply token occurs only in the injected conditional policy instruction, not in
+the user prompt. This is live evidence that the policy reached the model.
 
 ### E2 Pi subprocess probe
 

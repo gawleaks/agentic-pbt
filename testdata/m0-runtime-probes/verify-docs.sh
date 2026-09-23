@@ -14,7 +14,7 @@ require '| Claude Code | injected `additionalContext` reaches the session | Live
 require 'M3 (Claude Code plugin) must include `hookEventName` inside **every** `hookSpecificOutput`' "$compat"
 require '## Unproven M0 points' "$compat"
 require '**State:** In progress' "$progress"
-require 'Hook firing, process invocation, queued follow-up, cancellation, and compaction now have live evidence; Pi policy delivery and worker-extension loading remain unproven.' "$progress"
+require 'has live evidence for policy delivery, hook firing, process invocation, queued follow-up, cancellation, and compaction.' "$progress"
 require 'Claude `additionalContext` delivery is live-verified with valid `hookEventName` output.' "$progress"
 
 printf '%s\n' 'PASS: M0 documentation self-check'
