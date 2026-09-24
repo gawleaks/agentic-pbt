@@ -73,6 +73,9 @@ it is agreed; do not add placeholders for undecided items.
 - V1 includes `pbt inspect --task <id> --json`, a read-only report of the
   resolved root, property-test command, contract path, and installed
   Hypothesis/pytest versions.
+- `pbt gate` exits `0` when satisfied or `not_applicable`, `1` after property
+  verification failure, `2` when pending/stale/blocked/incomplete, and `3` for
+  invalid configuration or internal/setup errors. JSON gives the precise reason.
 
 ## Local operational artifacts
 
