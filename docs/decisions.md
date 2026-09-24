@@ -18,6 +18,8 @@ it is agreed; do not add placeholders for undecided items.
   worktree state; concurrent task routing is deferred.
 - Either the developer or the implementing agent may run `begin`, but it must
   happen before task edits so `pbt` captures the baseline.
+- Pi is PBT-inert when its worktree has no active task: it injects no PBT
+  obligations, runs no gate, and queues no PBT follow-up.
 - Pi runs `pbt gate --task <id> --json` only after the agent finishes. It does
   not gate individual edits.
 - An unsatisfied gate queues at most three labelled corrective follow-ups,
