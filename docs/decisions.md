@@ -35,6 +35,8 @@ it is agreed; do not add placeholders for undecided items.
   It does not select among multiple packages.
 - `pbt.config.json` requires a positive `timeoutSeconds` for that command. A
   timeout leaves verification unsatisfied.
+- The property-test command is an executable-and-arguments JSON array, never a
+  shell string; `pbt` executes it without shell interpolation.
 - `pbt verify` runs only that configured property-test command; normal unit and
   integration suites remain project-owned checks.
 - `pbt verify` first runs the configured pytest selection with `--collect-only`,
