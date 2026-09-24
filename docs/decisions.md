@@ -35,6 +35,9 @@ it is agreed; do not add placeholders for undecided items.
   It does not select among multiple packages.
 - `pbt verify` runs only that configured property-test command; normal unit and
   integration suites remain project-owned checks.
+- `pbt verify` first runs the configured pytest selection with `--collect-only`,
+  validates every contract-named pytest node ID, then runs the actual configured
+  property-test command.
 - Every contract-named pytest node ID must be collected and included in the
   configured command. Exit status zero alone is insufficient.
 - `pbt` fingerprints configured relevant files, the configuration, and the
