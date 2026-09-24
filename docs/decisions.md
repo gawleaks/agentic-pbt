@@ -70,6 +70,9 @@ it is agreed; do not add placeholders for undecided items.
   than treating the task as verified or silently skipping the gate.
 - Commands called by Pi accept `--json` and write one versioned result to
   stdout. Diagnostics go to stderr.
+- V1 includes `pbt inspect --task <id> --json`, a read-only report of the
+  resolved root, property-test command, contract path, and installed
+  Hypothesis/pytest versions.
 
 ## Local operational artifacts
 
