@@ -93,6 +93,8 @@ it is agreed; do not add placeholders for undecided items.
 
 ## Local operational artifacts
 
+- `pbt verify` holds one per-worktree verification lock. A concurrent request
+  reports `running` rather than creating overlapping evidence.
 - Task state records separate `verificationState` (`pending`, `running`,
   `passed`, `failed`, `stale`, `not_applicable`) and `workflowState` (`active`,
   `complete`, `blocked`, `cancelled`) so workflow decisions never erase test
