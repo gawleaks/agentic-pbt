@@ -84,6 +84,9 @@ it is agreed; do not add placeholders for undecided items.
 - V1 includes `pbt inspect --task <id> --json`, a read-only report of the
   resolved root, property-test command, contract path, and installed
   Hypothesis/pytest versions.
+- V1 adds no custom Pi task-control tools or commands. The implementing agent
+  uses its existing shell tool for the CLI; Pi injects obligations and runs the
+  finish gate only.
 - `pbt gate` exits `0` when satisfied or `not_applicable`, `1` after property
   verification failure, `2` when pending/stale/blocked/incomplete, and `3` for
   invalid configuration or internal/setup errors. JSON gives the precise reason.
