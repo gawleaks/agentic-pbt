@@ -61,6 +61,14 @@ it is agreed; do not add placeholders for undecided items.
   its normal tools; v1 `pbt` does not fetch, cache, or treat online
   documentation as verification evidence.
 
+## Pi installation boundary
+
+- The Pi extension resolves `pbt` from the Pi process's `PATH`.
+- `PBT_BIN` may supply an absolute executable path when Pi's `PATH` differs from
+  the interactive shell.
+- If neither resolves to an executable, Pi displays a clear setup error rather
+  than treating the task as verified or silently skipping the gate.
+
 ## Local operational artifacts
 
 - Task state (baseline, retry count, status, and run references) is stored in
