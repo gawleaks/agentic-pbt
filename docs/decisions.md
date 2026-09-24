@@ -33,6 +33,8 @@ it is agreed; do not add placeholders for undecided items.
 - Every target repository commits one `pbt.config.json`.
 - V1 supports one Python project root and one configured property-test command.
   It does not select among multiple packages.
+- `pbt.config.json` requires a positive `timeoutSeconds` for that command. A
+  timeout leaves verification unsatisfied.
 - `pbt verify` runs only that configured property-test command; normal unit and
   integration suites remain project-owned checks.
 - `pbt verify` first runs the configured pytest selection with `--collect-only`,
