@@ -106,5 +106,8 @@ it is agreed; do not add placeholders for undecided items.
   evidence.
 - Task state (baseline, retry count, status, and run references) is stored in
   ignored `.pbt/state/<task>.json` files.
+- Each verification retains its JUnit report and bounded stdout/stderr under
+  ignored `.pbt/runs/`, so corrective follow-ups can cite a real failure or
+  Hypothesis counterexample without committing generated test data.
 - Transient execution evidence is stored in ignored `.pbt/runs/`.
 - Only contracts are committed from `.pbt/` in v1.
