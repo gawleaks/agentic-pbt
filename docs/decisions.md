@@ -76,6 +76,10 @@ it is agreed; do not add placeholders for undecided items.
 
 ## Local operational artifacts
 
+- Task state records separate `verificationState` (`pending`, `running`,
+  `passed`, `failed`, `stale`, `not_applicable`) and `workflowState` (`active`,
+  `complete`, `blocked`, `cancelled`) so workflow decisions never erase test
+  evidence.
 - Task state (baseline, retry count, status, and run references) is stored in
   ignored `.pbt/state/<task>.json` files.
 - Transient execution evidence is stored in ignored `.pbt/runs/`.
