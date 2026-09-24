@@ -77,6 +77,8 @@ it is agreed; do not add placeholders for undecided items.
 
 ## Pi installation boundary
 
+- V1 is installed from source with `go install`; prebuilt release binaries are
+  deferred until the workflow is proven.
 - The Pi extension resolves `pbt` from the Pi process's `PATH`.
 - `PBT_BIN` may supply an absolute executable path when Pi's `PATH` differs from
   the interactive shell.
