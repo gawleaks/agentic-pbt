@@ -68,6 +68,8 @@ it is agreed; do not add placeholders for undecided items.
   the interactive shell.
 - If neither resolves to an executable, Pi displays a clear setup error rather
   than treating the task as verified or silently skipping the gate.
+- Commands called by Pi accept `--json` and write one versioned result to
+  stdout. Diagnostics go to stderr.
 
 ## Local operational artifacts
 
