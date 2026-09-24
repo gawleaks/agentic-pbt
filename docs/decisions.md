@@ -14,6 +14,8 @@ it is agreed; do not add placeholders for undecided items.
 ## Task and completion workflow
 
 - A task starts explicitly before edits: `pbt begin --task <id>`.
+- V1 permits one active task per worktree. Pi resolves the task from that active
+  worktree state; concurrent task routing is deferred.
 - Either the developer or the implementing agent may run `begin`, but it must
   happen before task edits so `pbt` captures the baseline.
 - Pi runs `pbt gate --task <id> --json` only after the agent finishes. It does
