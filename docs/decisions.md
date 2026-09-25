@@ -109,6 +109,13 @@ it is agreed; do not add placeholders for undecided items.
 
 - `pbt verify` holds one per-worktree verification lock. A concurrent request
   reports `running` rather than creating overlapping evidence.
+- Missing/invalid configuration or contract, missing `pbt`/pytest/Hypothesis,
+  malformed JUnit, and timeout are actionable blockers and never passes.
+  Assertion failures, skipped required tests, and missing required node IDs set
+  verification to `failed` and may use the repair budget.
+- Core acceptance fixtures cover begin → contract → fail → pass → stale plus
+  missing/skip/timeout cases. Pi acceptance covers policy injection, end gate,
+  bounded de-duplicated follow-up, and cancellation.
 - Task state records separate `verificationState` (`pending`, `running`,
   `passed`, `failed`, `stale`, `not_applicable`) and `workflowState` (`active`,
   `complete`, `blocked`, `cancelled`) so workflow decisions never erase test
