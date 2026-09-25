@@ -39,7 +39,11 @@ it is agreed; do not add placeholders for undecided items.
 
 ## Repository configuration and verification
 
-- Every target repository commits one `pbt.config.json`.
+- Every target repository commits one `pbt.config.json` with `schemaVersion`,
+  `projectRoot`, relevant `inputs` globs, one argument-array property-test
+  `command`, and `timeoutSeconds`.
+- The configuration and active task contract are always fingerprinted alongside
+  the configured inputs.
 - V1 supports one Python project root and one configured property-test command.
   It does not select among multiple packages.
 - `pbt.config.json` requires a positive `timeoutSeconds` for that command. A
