@@ -23,8 +23,10 @@ it is agreed; do not add placeholders for undecided items.
   happen before task edits so `pbt` captures the baseline.
 - Pi is PBT-inert when its worktree has no active task: it injects no PBT
   obligations, runs no gate, and queues no PBT follow-up.
-- Pi runs `pbt gate --task <id> --json` only after the agent finishes. It does
-  not gate individual edits.
+- Pi injects active-task obligations before the agent works, while `pbt`
+  validates the contract, collects tests, runs verification, and persists
+  evidence. Pi then runs `pbt gate --task <id> --json` after the agent finishes.
+  It does not gate individual edits.
 - Pi de-duplicates repeated `agent_end` callbacks for the same unsatisfied gate
   result; only a new recorded verification/gate result can queue another repair.
 - An unsatisfied gate queues at most three labelled corrective follow-ups,
