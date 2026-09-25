@@ -5,6 +5,9 @@ it is agreed; do not add placeholders for undecided items.
 
 ## V1 scope
 
+- V1 uses a CLI-owned architecture: Go `pbt` owns configuration, contracts,
+  task state, freshness, verification evidence, and gate decisions; Pi is a
+  thin lifecycle adapter.
 - V1 contains the standalone Go `pbt` CLI, a Python Hypothesis/pytest adapter,
   and a thin Pi extension.
 - The CLI remains usable directly by developers and CI. Pi invokes it; Pi does
