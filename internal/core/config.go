@@ -172,8 +172,8 @@ func validateProperty(property RequiredProperty) error {
 		value string
 	}{
 		{name: "id", value: property.ID},
-		{name: "statement", value: property.Statement},
 		{name: "generator", value: property.Generator},
+		{name: "statement", value: property.Statement},
 		{name: "oracle", value: property.Oracle},
 		{name: "test", value: property.Test},
 	}
@@ -217,4 +217,3 @@ func findRepositoryRoot(directory string) (string, error) {
 		directory = parent
 	}
 }
-

@@ -21,12 +21,12 @@ type RequiredProperty struct {
 
 // Contract describes either required PBT behavior or why it is not applicable.
 type Contract struct {
-	SchemaVersion  int                `json:"schemaVersion"`
-	Task           string             `json:"task"`
-	Applicability  string             `json:"applicability"`
-	Behavior       string             `json:"behavior"`
-	Reason         string             `json:"reason"`
-	Properties     []RequiredProperty `json:"properties"`
+	SchemaVersion int                `json:"schemaVersion"`
+	Task          string             `json:"task"`
+	Applicability string             `json:"applicability"`
+	Behavior      string             `json:"behavior"`
+	Reason        string             `json:"reason"`
+	Properties    []RequiredProperty `json:"properties"`
 }
 
 // Result is the outcome of a PBT operation.
