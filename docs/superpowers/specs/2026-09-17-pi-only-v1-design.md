@@ -28,9 +28,9 @@ automatic package discovery, release binaries, and worker support are deferred.
 
 ## Architecture
 
-`pbt` is the deep module: it owns configuration validation, active-task state,
-contracts, fingerprints, pytest execution, evidence, retry decisions, and the
-completion gate. Its interface is CLI commands with optional JSON output.
+``pbt` is the deep module: it owns configuration validation, active-task state,
+contracts, fingerprints, pytest execution, its bundled pytest reporter, evidence,
+retry decisions, and the completion gate. Its interface is CLI commands with optional JSON output.
 
 The Pi TypeScript extension is a thin adapter. It does not parse pytest output,
 implement freshness, or track retries itself. It:
@@ -119,7 +119,7 @@ Operational files are local and ignored:
 ```text
 .pbt/state/active.json      active-task pointer for the worktree
 .pbt/state/<task>.json      baseline, states, retry ledger, run references
-.pbt/runs/<run>/            result JSON, JUnit XML, bounded stdout/stderr
+.pbt/runs/<run>/            result JSON, JUnit XML, node-result JSONL, bounded stdout/stderr
 ```
 
 Only contracts are committed from `.pbt/`.
@@ -166,15 +166,19 @@ For a required contract it:
 1. validates config and contract shape;
 2. runs the configured pytest selection with `--collect-only`;
 3. confirms every contract node ID is collected by that selection;
-4. runs the configured command with a temporary `--junitxml` output path;
-5. requires every contract node ID to report passed, not skipped;
-6. captures bounded output and the JUnit report; and
+4. runs the configured command with a temporary `--junitxml` output path and
+   the bundled `pbt_pytest_reporter` plugin;
+5. requires every contract node ID to report passed, not skipped, in the
+   plugin's exact-node-result JSONL;
+6. captures bounded output, the JUnit report, and node-result JSONL; and
 7. fingerprints the configured inputs, config, and contract before and after the
    run.
 
-A zero process exit alone never satisfies verification. Missing nodes, skipped
-required tests, assertion failures, malformed reports, missing pytest/Hypothesis,
-and timeouts cannot pass. Assertion failures, missing nodes, and skipped tests
+A zero process exit alone never satisfies verification. Pytest's JUnit XML does
+not reliably preserve node IDs, so the bundled reporter's JSONL is authoritative
+for required-node outcomes; JUnit remains human-readable evidence. Missing nodes,
+skipped required tests, assertion failures, malformed reports, missing
+pytest/Hypothesis, and timeouts cannot pass. Assertion failures, missing nodes, and skipped tests
 are repairable `failed` evidence. Setup failures and timeouts are actionable
 blockers. Any relevant change after a pass makes evidence `stale`; `gate`
 recomputes the fingerprint instead of trusting lifecycle events.

@@ -58,9 +58,11 @@ it is agreed; do not add placeholders for undecided items.
 - `pbt verify` first runs the configured pytest selection with `--collect-only`,
   validates every contract-named pytest node ID, then runs the actual configured
   property-test command.
-- `pbt verify` appends a temporary pytest `--junitxml` report and requires every
-  contract-named node ID to pass. A skipped required property leaves the gate
-  unsatisfied.
+- `pbt verify` appends a temporary pytest `--junitxml` report and loads the
+  bundled `pbt_pytest_reporter` plugin. The plugin writes exact pytest node IDs
+  and outcomes as JSONL; it is authoritative for contract-node pass/skip/fail
+  results, while JUnit remains a human-readable artifact. A skipped required
+  property leaves the gate unsatisfied.
 - Every contract-named pytest node ID must be collected and included in the
   configured command. Exit status zero alone is insufficient.
 - `pbt` fingerprints configured relevant files, the configuration, and the
@@ -125,8 +127,9 @@ it is agreed; do not add placeholders for undecided items.
   evidence.
 - Task state (baseline, retry count, status, and run references) is stored in
   ignored `.pbt/state/<task>.json` files.
-- Each verification retains its JUnit report and bounded stdout/stderr under
-  ignored `.pbt/runs/`, so corrective follow-ups can cite a real failure or
-  Hypothesis counterexample without committing generated test data.
+- Each verification retains its JUnit report, plugin node-result JSONL, and
+  bounded stdout/stderr under ignored `.pbt/runs/`, so corrective follow-ups can
+  cite a real failure or Hypothesis counterexample without committing generated
+  test data.
 - Transient execution evidence is stored in ignored `.pbt/runs/`.
 - Only contracts are committed from `.pbt/` in v1.
