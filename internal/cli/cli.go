@@ -161,10 +161,13 @@ func runCancel(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 	if jsonOutput {
-		return writeJSON(stdout, stderr, result)
+		if code := writeJSON(stdout, stderr, result); code != 0 {
+			return code
+		}
+	} else {
+		fmt.Fprintf(stdout, "Task %q cancelled.\n", result.Task)
 	}
-	fmt.Fprintf(stdout, "Task %q cancelled.\n", result.Task)
-	return 0
+	return gateExitCode(result)
 }
 
 func runResume(args []string, stdout, stderr io.Writer) int {

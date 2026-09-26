@@ -277,8 +277,8 @@ func TestCancelCommandRecordsCancellationAndSuppressesFollowUp(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	code := Run([]string{"cancel", "--task", "discount", "--json"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("Run code = %d, stderr = %q", code, stderr.String())
+	if code != 2 {
+		t.Fatalf("Run code = %d, want 2; stderr = %q", code, stderr.String())
 	}
 	var cancelled core.Result
 	if err := json.Unmarshal(stdout.Bytes(), &cancelled); err != nil {
