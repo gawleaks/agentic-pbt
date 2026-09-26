@@ -40,6 +40,26 @@ const (
 	VerificationNotApplicable VerificationState = "not_applicable"
 )
 
+// DirtyBaseline records relevant changes that existed when a task began.
+type DirtyBaseline struct {
+	Modified  []string `json:"modified"`
+	Untracked []string `json:"untracked"`
+	Deleted   []string `json:"deleted"`
+}
+
+// TaskState records one task's local verification lifecycle.
+type TaskState struct {
+	SchemaVersion      int               `json:"schemaVersion"`
+	Task               string            `json:"task"`
+	Baseline           DirtyBaseline     `json:"baseline"`
+	CurrentFingerprint string            `json:"currentFingerprint"`
+	RepairCount        int               `json:"repairCount"`
+	LastResultID       string            `json:"lastResultId"`
+	VerificationState  VerificationState `json:"verificationState"`
+	WorkflowState      WorkflowState     `json:"workflowState"`
+	RunDirectory       string            `json:"runDirectory"`
+}
+
 type WorkflowState string
 
 const (
