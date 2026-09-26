@@ -270,6 +270,47 @@ pbt_pytest_reporter.pytest_sessionfinish(None, 0)
 	}
 }
 
+func TestBundledReporterKeeps150ByteJUnitParseable(t *testing.T) {
+	runDirectory := t.TempDir()
+	reporterPath := filepath.Join(runDirectory, "pbt_pytest_reporter.py")
+	if err := os.WriteFile(reporterPath, []byte(pytest.Reporter), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	junitPath := filepath.Join(runDirectory, "junit.xml")
+	program := `
+import pbt_pytest_reporter
+class Report:
+    when = "call"
+    outcome = "passed"
+    def __init__(self, nodeid):
+        self.nodeid = nodeid
+pbt_pytest_reporter.pytest_sessionstart(None)
+for nodeid in ("a", "b"):
+    pbt_pytest_reporter.pytest_runtest_logreport(Report(nodeid))
+pbt_pytest_reporter.pytest_sessionfinish(None, 0)
+`
+	command := exec.Command("python3", "-c", program)
+	command.Env = replaceEnvironment(os.Environ(), "PYTHONPATH", runDirectory)
+	command.Env = replaceEnvironment(command.Env, "PBT_NODE_RESULTS", filepath.Join(runDirectory, "node-results.jsonl"))
+	command.Env = replaceEnvironment(command.Env, "PBT_JUNIT_PATH", junitPath)
+	command.Env = replaceEnvironment(command.Env, "PBT_RUN_ARTIFACT_LIMIT", "150")
+	command.Env = replaceEnvironment(command.Env, "PBT_ARTIFACT_LIMIT_MARKER", filepath.Join(runDirectory, "artifact-limit-exceeded"))
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reporter: %v\n%s", err, output)
+	}
+	junit, err := os.ReadFile(junitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(junit) > 150 {
+		t.Fatalf("JUnit size = %d, want at most 150", len(junit))
+	}
+	var document struct{ XMLName xml.Name }
+	if err := xml.Unmarshal(junit, &document); err != nil {
+		t.Fatalf("JUnit XML = %q: %v", junit, err)
+	}
+}
+
 func TestBundledReporterDefersWritesToXdistController(t *testing.T) {
 	runDirectory := t.TempDir()
 	reporterPath := filepath.Join(runDirectory, "pbt_pytest_reporter.py")

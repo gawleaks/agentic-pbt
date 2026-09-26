@@ -7,6 +7,7 @@ _JUNIT_PATH = os.environ["PBT_JUNIT_PATH"]
 _LIMIT = int(os.environ["PBT_RUN_ARTIFACT_LIMIT"])
 _LIMIT_MARKER = os.environ["PBT_ARTIFACT_LIMIT_MARKER"]
 _IS_XDIST_WORKER = "PYTEST_XDIST_WORKER" in os.environ
+_JUNIT_CLOSING_TAGS = "</testsuite></testsuites>"
 _SIZES = {}
 
 
@@ -15,10 +16,10 @@ def _mark_limit_exceeded():
         pass
 
 
-def _write(path, content):
+def _write(path, content, reserve=0):
     data = content.encode("utf-8")
     size = _SIZES.get(path, 0)
-    if size + len(data) > _LIMIT:
+    if size + len(data) + reserve > _LIMIT:
         _mark_limit_exceeded()
         return
     with open(path, "ab") as output:
@@ -45,6 +46,7 @@ def _write_report(report):
     _write(
         _JUNIT_PATH,
         f'<testcase name="{html.escape(report.nodeid, quote=True)}">{outcome}</testcase>',
+        len(_JUNIT_CLOSING_TAGS),
     )
 
 
@@ -68,4 +70,4 @@ def pytest_runtest_logreport(report):
 def pytest_sessionfinish(session, exitstatus):
     if _IS_XDIST_WORKER:
         return
-    _write(_JUNIT_PATH, "</testsuite></testsuites>")
+    _write(_JUNIT_PATH, _JUNIT_CLOSING_TAGS)
