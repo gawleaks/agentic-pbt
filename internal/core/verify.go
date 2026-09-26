@@ -82,12 +82,16 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 
 	nodeResultsPath := filepath.Join(runDirectory, "node-results.jsonl")
 	junitPath := filepath.Join(runDirectory, "junit.xml")
+	artifactLimitMarkerPath := filepath.Join(runDirectory, "artifact-limit-exceeded")
 	env := replaceEnvironment(os.Environ(), "PYTHONPATH", prependPath(runDirectory, os.Getenv("PYTHONPATH")))
 	env = replaceEnvironment(env, "PBT_NODE_RESULTS", nodeResultsPath)
+	env = replaceEnvironment(env, "PBT_JUNIT_PATH", junitPath)
+	env = replaceEnvironment(env, "PBT_RUN_ARTIFACT_LIMIT", fmt.Sprint(runArtifactLimit))
+	env = replaceEnvironment(env, "PBT_ARTIFACT_LIMIT_MARKER", artifactLimitMarkerPath)
 	executionContext, cancelExecution := context.WithTimeout(ctx, time.Duration(config.TimeoutSeconds)*time.Second)
 	execution := service.run(
 		executionContext,
-		append(append([]string{}, config.Command...), "--junitxml", junitPath, "-p", "pbt_pytest_reporter"),
+		append(append([]string{}, config.Command...), "-p", "pbt_pytest_reporter"),
 		config.ProjectRoot,
 		env,
 		processOutputLimit,
@@ -99,6 +103,11 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 
 	artifactLimitExceeded, err := enforceArtifactLimit(junitPath, nodeResultsPath)
 	if err != nil {
+		return Result{}, err
+	}
+	if _, err := os.Stat(artifactLimitMarkerPath); err == nil {
+		artifactLimitExceeded = true
+	} else if !os.IsNotExist(err) {
 		return Result{}, err
 	}
 	after, err := Fingerprint(config.ProjectRoot, config, contractPath)

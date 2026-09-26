@@ -58,11 +58,11 @@ it is agreed; do not add placeholders for undecided items.
 - `pbt verify` first runs the configured pytest selection with `--collect-only`,
   validates every contract-named pytest node ID, then runs the actual configured
   property-test command.
-- `pbt verify` appends a temporary pytest `--junitxml` report and loads the
-  bundled `pbt_pytest_reporter` plugin. The plugin writes exact pytest node IDs
-  and outcomes as JSONL; it is authoritative for contract-node pass/skip/fail
-  results, while JUnit remains a human-readable artifact. A skipped required
-  property leaves the gate unsatisfied.
+- `pbt verify` loads the bundled `pbt_pytest_reporter` plugin. The reporter
+  writes exact pytest node IDs and outcomes as bounded JSONL plus a bounded,
+  human-readable JUnit artifact; JSONL is authoritative for contract-node
+  pass/skip/fail results. A skipped required property leaves the gate
+  unsatisfied.
 - Every contract-named pytest node ID must be collected and included in the
   configured command. Exit status zero alone is insufficient.
 - `pbt` fingerprints configured relevant files, the configuration, and the

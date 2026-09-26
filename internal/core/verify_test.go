@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/xml"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gawleaks/agentic-pbt/internal/pytest"
 )
 
 const discountNode = "tests/property/test_discount.py::test_discount_total"
@@ -176,6 +179,165 @@ func TestVerifyCollectionFailurePersistsPostCollectionDigest(t *testing.T) {
 	}
 }
 
+func TestVerifyUsesReporterOwnedJUnit(t *testing.T) {
+	service, _ := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	originalRun := service.Run
+	service.Run = func(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {
+		if !hasArgument(argv, "--collect-only") {
+			if hasArgument(argv, "--junitxml") {
+				t.Fatalf("execution argv contains pytest-owned JUnit flag: %#v", argv)
+			}
+			if environmentValue(env, "PBT_JUNIT_PATH") == "" {
+				t.Fatal("PBT_JUNIT_PATH is missing")
+			}
+		}
+		return originalRun(ctx, argv, dir, env, limit)
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationPassed {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestVerifyFailsWhenReporterSignalsArtifactLimit(t *testing.T) {
+	service, _ := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	originalRun := service.Run
+	service.Run = func(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {
+		result := originalRun(ctx, argv, dir, env, limit)
+		if hasArgument(argv, "--collect-only") {
+			return result
+		}
+		if markerPath := environmentValue(env, "PBT_ARTIFACT_LIMIT_MARKER"); markerPath != "" {
+			if err := os.WriteFile(markerPath, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return result
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationFailed || result.ReasonCode != "artifact_limit_exceeded" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestBundledReporterCapsArtifactsWhileWriting(t *testing.T) {
+	runDirectory := t.TempDir()
+	reporterPath := filepath.Join(runDirectory, "pbt_pytest_reporter.py")
+	if err := os.WriteFile(reporterPath, []byte(pytest.Reporter), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nodeResultsPath := filepath.Join(runDirectory, "node-results.jsonl")
+	junitPath := filepath.Join(runDirectory, "junit.xml")
+	markerPath := filepath.Join(runDirectory, "artifact-limit-exceeded")
+	program := `
+import pbt_pytest_reporter
+class Report:
+    nodeid = "x" * 1024
+    outcome = "passed"
+    when = "call"
+pbt_pytest_reporter.pytest_sessionstart(None)
+pbt_pytest_reporter.pytest_runtest_logreport(Report())
+pbt_pytest_reporter.pytest_sessionfinish(None, 0)
+`
+	command := exec.Command("python3", "-c", program)
+	command.Env = replaceEnvironment(os.Environ(), "PYTHONPATH", runDirectory)
+	command.Env = replaceEnvironment(command.Env, "PBT_NODE_RESULTS", nodeResultsPath)
+	command.Env = replaceEnvironment(command.Env, "PBT_JUNIT_PATH", junitPath)
+	command.Env = replaceEnvironment(command.Env, "PBT_RUN_ARTIFACT_LIMIT", "64")
+	command.Env = replaceEnvironment(command.Env, "PBT_ARTIFACT_LIMIT_MARKER", markerPath)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reporter: %v\n%s", err, output)
+	}
+	for _, path := range []string{nodeResultsPath, junitPath} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() > 64 {
+			t.Fatalf("%s size = %d, want at most 64", path, info.Size())
+		}
+	}
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("artifact-limit marker: %v", err)
+	}
+}
+
+func TestBundledReporterDefersWritesToXdistController(t *testing.T) {
+	runDirectory := t.TempDir()
+	reporterPath := filepath.Join(runDirectory, "pbt_pytest_reporter.py")
+	if err := os.WriteFile(reporterPath, []byte(pytest.Reporter), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	nodeResultsPath := filepath.Join(runDirectory, "node-results.jsonl")
+	junitPath := filepath.Join(runDirectory, "junit.xml")
+	command := exec.Command("python3", "-c", "import pbt_pytest_reporter; pbt_pytest_reporter.pytest_sessionstart(None)")
+	command.Env = replaceEnvironment(os.Environ(), "PYTHONPATH", runDirectory)
+	command.Env = replaceEnvironment(command.Env, "PBT_NODE_RESULTS", nodeResultsPath)
+	command.Env = replaceEnvironment(command.Env, "PBT_JUNIT_PATH", junitPath)
+	command.Env = replaceEnvironment(command.Env, "PBT_RUN_ARTIFACT_LIMIT", "64")
+	command.Env = replaceEnvironment(command.Env, "PBT_ARTIFACT_LIMIT_MARKER", filepath.Join(runDirectory, "artifact-limit-exceeded"))
+	command.Env = replaceEnvironment(command.Env, "PYTEST_XDIST_WORKER", "gw0")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reporter: %v\n%s", err, output)
+	}
+	for _, path := range []string{nodeResultsPath, junitPath} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("worker wrote %s: %v", path, err)
+		}
+	}
+}
+
+func TestBundledReporterWritesJUnitOutcomes(t *testing.T) {
+	runDirectory := t.TempDir()
+	reporterPath := filepath.Join(runDirectory, "pbt_pytest_reporter.py")
+	if err := os.WriteFile(reporterPath, []byte(pytest.Reporter), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	junitPath := filepath.Join(runDirectory, "junit.xml")
+	program := `
+import pbt_pytest_reporter
+class Report:
+    when = "call"
+    def __init__(self, nodeid, outcome):
+        self.nodeid = nodeid
+        self.outcome = outcome
+pbt_pytest_reporter.pytest_sessionstart(None)
+for outcome in ("passed", "skipped", "failed"):
+    pbt_pytest_reporter.pytest_runtest_logreport(Report(outcome, outcome))
+pbt_pytest_reporter.pytest_sessionfinish(None, 0)
+`
+	command := exec.Command("python3", "-c", program)
+	command.Env = replaceEnvironment(os.Environ(), "PYTHONPATH", runDirectory)
+	command.Env = replaceEnvironment(command.Env, "PBT_NODE_RESULTS", filepath.Join(runDirectory, "node-results.jsonl"))
+	command.Env = replaceEnvironment(command.Env, "PBT_JUNIT_PATH", junitPath)
+	command.Env = replaceEnvironment(command.Env, "PBT_RUN_ARTIFACT_LIMIT", "4096")
+	command.Env = replaceEnvironment(command.Env, "PBT_ARTIFACT_LIMIT_MARKER", filepath.Join(runDirectory, "artifact-limit-exceeded"))
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("reporter: %v\n%s", err, output)
+	}
+	junit, err := os.ReadFile(junitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, testcase := range []string{
+		`<testcase name="passed"></testcase>`,
+		`<testcase name="skipped"><skipped/></testcase>`,
+		`<testcase name="failed"><failure/></testcase>`,
+	} {
+		if !strings.Contains(string(junit), testcase) {
+			t.Fatalf("JUnit = %q, missing %q", junit, testcase)
+		}
+	}
+}
+
 func TestVerifyFailsWhenJUnitArtifactExceedsLimit(t *testing.T) {
 	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
 	originalRun := service.Run
@@ -184,7 +346,7 @@ func TestVerifyFailsWhenJUnitArtifactExceedsLimit(t *testing.T) {
 		if hasArgument(argv, "--collect-only") {
 			return result
 		}
-		junitPath := argumentAfter(argv, "--junitxml")
+		junitPath := environmentValue(env, "PBT_JUNIT_PATH")
 		content := []byte("<testsuites><testsuite/></testsuites>" + strings.Repeat(" ", 64*1024))
 		if err := os.WriteFile(junitPath, content, 0o600); err != nil {
 			t.Fatal(err)
@@ -331,7 +493,10 @@ func verifyTestService(t *testing.T, collected, nodeResults string, execution Pr
 				}
 			}
 		}
-		junitPath := argumentAfter(argv, "--junitxml")
+		junitPath := environmentValue(env, "PBT_JUNIT_PATH")
+		if junitPath == "" {
+			junitPath = argumentAfter(argv, "--junitxml")
+		}
 		if err := os.WriteFile(junitPath, []byte("<testsuites><testsuite name=\"different-names\"/></testsuites>"), 0o600); err != nil {
 			t.Fatal(err)
 		}
