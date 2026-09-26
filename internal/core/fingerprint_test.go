@@ -6,6 +6,77 @@ import (
 	"testing"
 )
 
+func TestFingerprintRetainsConfigOutsideProjectRoot(t *testing.T) {
+	root, configPath := stateTestRepository(t)
+	projectRoot := filepath.Join(root, "app")
+	writeStateTestFile(t, configPath, `{
+		"schemaVersion": 1,
+		"projectRoot": "app",
+		"inputs": ["src/**"],
+		"python": ["python"],
+		"command": ["pytest"],
+		"timeoutSeconds": 30
+	}`)
+	writeStateTestFile(t, filepath.Join(projectRoot, "src", "value.py"), "value = 1\n")
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractPath := filepath.Join(config.ProjectRoot, ".pbt", "contracts", "discount.json")
+	writeStateTestFile(t, contractPath, `{"schemaVersion":1,"task":"discount"}`)
+	before, err := Fingerprint(config.ProjectRoot, config, contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStateTestFile(t, configPath, `{
+		"schemaVersion": 1,
+		"projectRoot": "app",
+		"inputs": ["src/**"],
+		"python": ["python"],
+		"command": ["pytest"],
+		"timeoutSeconds": 60
+	}`)
+	after, err := Fingerprint(config.ProjectRoot, config, contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("fingerprint ignored configuration outside project root")
+	}
+}
+
+func TestRelevantPathsIncludesDeletedNestedTrackedInput(t *testing.T) {
+	root, configPath := stateTestRepository(t)
+	projectRoot := filepath.Join(root, "app")
+	writeStateTestFile(t, configPath, `{
+		"schemaVersion": 1,
+		"projectRoot": "app",
+		"inputs": ["src/**"],
+		"python": ["python"],
+		"command": ["pytest"],
+		"timeoutSeconds": 30
+	}`)
+	valuePath := filepath.Join(projectRoot, "src", "value.py")
+	writeStateTestFile(t, valuePath, "value = 1\n")
+	runStateTestGit(t, root, "add", "pbt.config.json", "app")
+	runStateTestGit(t, root, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "add app")
+	if err := os.Remove(valuePath); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, err := relevantPaths(config.ProjectRoot, config.Inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := paths["src/value.py"]; !exists {
+		t.Fatalf("paths = %#v, want deleted src/value.py", paths)
+	}
+}
+
 func TestFingerprintChangesForUntrackedConfiguredInput(t *testing.T) {
 	root, configPath := stateTestRepository(t)
 	before := mustFingerprint(t, root, configPath)

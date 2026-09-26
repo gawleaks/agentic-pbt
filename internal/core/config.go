@@ -60,6 +60,10 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	config.ProjectRoot = root
+	config.configPath, err = filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
 	return &config, nil
 }
 

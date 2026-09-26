@@ -28,18 +28,28 @@ func Begin(root, task string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := ensureNoActiveTask(root); err != nil {
+	projectRoot := config.ProjectRoot
+	if err := addLocalExcludes(projectRoot); err != nil {
 		return Result{}, err
 	}
-	if err := addLocalExcludes(root); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".pbt", "runs"), 0o755); err != nil {
 		return Result{}, err
 	}
+	if err := createActiveTask(projectRoot, task); err != nil {
+		return Result{}, err
+	}
+	keepActiveTask := false
+	defer func() {
+		if !keepActiveTask {
+			_ = os.Remove(filepath.Join(projectRoot, ".pbt", "state", "active.json"))
+		}
+	}()
 
-	baseline, err := dirtyBaseline(root, config.Inputs)
+	baseline, err := dirtyBaseline(projectRoot, config.Inputs)
 	if err != nil {
 		return Result{}, err
 	}
-	fingerprint, err := Fingerprint(root, config, filepath.Join(root, ".pbt", "contracts", task+".json"))
+	fingerprint, err := Fingerprint(projectRoot, config, filepath.Join(projectRoot, ".pbt", "contracts", task+".json"))
 	if err != nil {
 		return Result{}, err
 	}
@@ -54,15 +64,10 @@ func Begin(root, task string) (Result, error) {
 		WorkflowState:      WorkflowActive,
 		RunDirectory:       "",
 	}
-	if err := SaveState(root, state); err != nil {
+	if err := SaveState(projectRoot, state); err != nil {
 		return Result{}, err
 	}
-	if err := writeJSONAtomic(filepath.Join(root, ".pbt", "state", "active.json"), activeTask{Task: task}); err != nil {
-		return Result{}, err
-	}
-	if err := os.MkdirAll(filepath.Join(root, ".pbt", "runs"), 0o755); err != nil {
-		return Result{}, err
-	}
+	keepActiveTask = true
 
 	return Result{
 		SchemaVersion:     schemaVersion,
@@ -95,12 +100,26 @@ func SaveState(root string, state TaskState) error {
 	return writeJSONAtomic(filepath.Join(root, ".pbt", "state", state.Task+".json"), state)
 }
 
-func ensureNoActiveTask(root string) error {
-	_, err := os.Stat(filepath.Join(root, ".pbt", "state", "active.json"))
-	if err == nil {
+func createActiveTask(root, task string) error {
+	path := filepath.Join(root, ".pbt", "state", "active.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if os.IsExist(err) {
 		return fmt.Errorf("an active task already exists")
 	}
-	if !os.IsNotExist(err) {
+	if err != nil {
+		return err
+	}
+	if err := json.NewEncoder(file).Encode(activeTask{Task: task}); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
 		return err
 	}
 	return nil
@@ -123,8 +142,21 @@ func addLocalExcludes(root string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	repositoryRoot, err := gitRepositoryRoot(root)
+	if err != nil {
+		return err
+	}
+	projectPath, err := filepath.Rel(repositoryRoot, root)
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	if projectPath != "." {
+		prefix = filepath.ToSlash(projectPath) + "/"
+	}
+
 	lines := strings.Split(string(content), "\n")
-	rules := []string{".pbt/state/", ".pbt/runs/"}
+	rules := []string{prefix + ".pbt/state/", prefix + ".pbt/runs/"}
 	for _, rule := range rules {
 		found := false
 		for _, line := range lines {
@@ -150,6 +182,10 @@ func dirtyBaseline(root string, inputs []string) (DirtyBaseline, error) {
 	if err != nil {
 		return DirtyBaseline{}, err
 	}
+	repositoryRoot, err := gitRepositoryRoot(root)
+	if err != nil {
+		return DirtyBaseline{}, err
+	}
 	baseline := DirtyBaseline{
 		Modified:  []string{},
 		Untracked: []string{},
@@ -165,6 +201,13 @@ func dirtyBaseline(root string, inputs []string) (DirtyBaseline, error) {
 		name := filepath.ToSlash(entry[3:])
 		if status[0] == 'R' || status[0] == 'C' {
 			index++
+		}
+		name, insideProjectRoot, err := projectRelativePath(repositoryRoot, root, name)
+		if err != nil {
+			return DirtyBaseline{}, err
+		}
+		if !insideProjectRoot {
+			continue
 		}
 		matches, err := matchesInputs(name, inputs)
 		if err != nil {
@@ -190,7 +233,7 @@ func dirtyBaseline(root string, inputs []string) (DirtyBaseline, error) {
 }
 
 func validateTask(task string) error {
-	if strings.TrimSpace(task) == "" || task == "." || strings.ContainsAny(task, `/\\`) {
+	if strings.TrimSpace(task) == "" || task == "." || task == "active" || strings.ContainsAny(task, `/\\`) {
 		return fmt.Errorf("task must be a non-empty file name")
 	}
 	return nil

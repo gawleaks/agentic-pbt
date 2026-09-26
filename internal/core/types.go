@@ -8,6 +8,7 @@ type Config struct {
 	Python         []string `json:"python"`
 	Command        []string `json:"command"`
 	TimeoutSeconds int      `json:"timeoutSeconds"`
+	configPath     string
 }
 
 // RequiredProperty describes one property that must be tested.

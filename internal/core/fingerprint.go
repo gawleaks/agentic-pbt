@@ -19,10 +19,14 @@ func Fingerprint(root string, config *Config, contractPath string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if err := addFingerprintPath(paths, root, filepath.Join(root, "pbt.config.json")); err != nil {
+	configPath := config.configPath
+	if configPath == "" {
+		configPath = filepath.Join(root, "pbt.config.json")
+	}
+	if err := addFingerprintPath(paths, root, configPath, true); err != nil {
 		return "", err
 	}
-	if err := addFingerprintPath(paths, root, contractPath); err != nil {
+	if err := addFingerprintPath(paths, root, contractPath, false); err != nil {
 		return "", err
 	}
 
@@ -92,26 +96,37 @@ func relevantPaths(root string, inputs []string) (map[string]struct{}, error) {
 		return nil, err
 	}
 
-	tracked, err := runGit("-C", root, "ls-files", "-z")
+	repositoryRoot, err := gitRepositoryRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	tracked, err := runGit("-C", root, "ls-files", "--full-name", "-z")
 	if err != nil {
 		return nil, err
 	}
 	for _, name := range strings.Split(tracked, "\x00") {
-		if name == "" || excludedLocalPath(name) {
+		if name == "" {
 			continue
 		}
-		matched, err := matchesInputs(filepath.ToSlash(name), inputs)
+		relative, insideProjectRoot, err := projectRelativePath(repositoryRoot, root, name)
+		if err != nil {
+			return nil, err
+		}
+		if !insideProjectRoot || excludedLocalPath(relative) {
+			continue
+		}
+		matched, err := matchesInputs(relative, inputs)
 		if err != nil {
 			return nil, err
 		}
 		if matched {
-			paths[filepath.ToSlash(name)] = struct{}{}
+			paths[relative] = struct{}{}
 		}
 	}
 	return paths, nil
 }
 
-func addFingerprintPath(paths map[string]struct{}, root, filePath string) error {
+func addFingerprintPath(paths map[string]struct{}, root, filePath string, allowOutsideRoot bool) error {
 	if !filepath.IsAbs(filePath) {
 		filePath = filepath.Join(root, filePath)
 	}
@@ -120,11 +135,31 @@ func addFingerprintPath(paths map[string]struct{}, root, filePath string) error 
 		return err
 	}
 	relative = filepath.ToSlash(relative)
-	if relative == ".." || strings.HasPrefix(relative, "../") {
+	if !allowOutsideRoot && (relative == ".." || strings.HasPrefix(relative, "../")) {
 		return fmt.Errorf("fingerprint path %q is outside project root", filePath)
 	}
 	paths[relative] = struct{}{}
 	return nil
+}
+
+func gitRepositoryRoot(root string) (string, error) {
+	output, err := runGit("-C", root, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+
+func projectRelativePath(repositoryRoot, projectRoot, name string) (string, bool, error) {
+	relative, err := filepath.Rel(projectRoot, filepath.Join(repositoryRoot, filepath.FromSlash(name)))
+	if err != nil {
+		return "", false, err
+	}
+	relative = filepath.ToSlash(relative)
+	if relative == ".." || strings.HasPrefix(relative, "../") {
+		return "", false, nil
+	}
+	return relative, true, nil
 }
 
 func excludedLocalPath(filePath string) bool {
