@@ -29,7 +29,33 @@ type Contract struct {
 	Properties    []RequiredProperty `json:"properties"`
 }
 
+type VerificationState string
+
+const (
+	VerificationPending       VerificationState = "pending"
+	VerificationRunning       VerificationState = "running"
+	VerificationPassed        VerificationState = "passed"
+	VerificationFailed        VerificationState = "failed"
+	VerificationStale         VerificationState = "stale"
+	VerificationNotApplicable VerificationState = "not_applicable"
+)
+
+type WorkflowState string
+
+const (
+	WorkflowActive    WorkflowState = "active"
+	WorkflowComplete  WorkflowState = "complete"
+	WorkflowBlocked   WorkflowState = "blocked"
+	WorkflowCancelled WorkflowState = "cancelled"
+)
+
 // Result is the outcome of a PBT operation.
 type Result struct {
-	Success bool `json:"success"`
+	SchemaVersion     int               `json:"schemaVersion"`
+	Task              string            `json:"task"`
+	VerificationState VerificationState `json:"verificationState"`
+	WorkflowState     WorkflowState     `json:"workflowState"`
+	ReasonCode        string            `json:"reasonCode"`
+	NextAction        string            `json:"nextAction"`
+	FollowUp          string            `json:"followUp,omitempty"`
 }

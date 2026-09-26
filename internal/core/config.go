@@ -36,6 +36,9 @@ func LoadConfig(path string) (*Config, error) {
 	if config.SchemaVersion != schemaVersion {
 		return nil, fmt.Errorf("unsupported schemaVersion %d", config.SchemaVersion)
 	}
+	if strings.TrimSpace(config.ProjectRoot) == "" {
+		return nil, fmt.Errorf("projectRoot must not be empty")
+	}
 	if filepath.IsAbs(config.ProjectRoot) {
 		return nil, fmt.Errorf("projectRoot must be relative")
 	}
@@ -194,7 +197,14 @@ func resolveProjectRoot(configPath, projectRoot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resolvedRoot := filepath.Clean(filepath.Join(configDirectory, projectRoot))
+	repositoryRoot, err = filepath.EvalSymlinks(repositoryRoot)
+	if err != nil {
+		return "", err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(filepath.Clean(filepath.Join(configDirectory, projectRoot)))
+	if err != nil {
+		return "", err
+	}
 	relativeRoot, err := filepath.Rel(repositoryRoot, resolvedRoot)
 	if err != nil {
 		return "", err
