@@ -58,6 +58,8 @@ type TaskState struct {
 	CurrentFingerprint string            `json:"currentFingerprint"`
 	RepairCount        int               `json:"repairCount"`
 	LastResultID       string            `json:"lastResultId"`
+	LastGateRunID      string            `json:"lastGateRunId"`
+	ResumedAt          time.Time         `json:"resumedAt"`
 	VerificationState  VerificationState `json:"verificationState"`
 	WorkflowState      WorkflowState     `json:"workflowState"`
 	RunDirectory       string            `json:"runDirectory"`

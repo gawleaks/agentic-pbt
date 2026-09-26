@@ -28,6 +28,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "verify" {
 		return runVerify(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "gate" {
+		return runGate(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "resume" {
+		return runResume(args[1:], stdout, stderr)
+	}
 
 	fmt.Fprintln(stderr, "unknown command")
 	return 3
@@ -106,6 +112,70 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	return 1
+}
+
+func runGate(args []string, stdout, stderr io.Writer) int {
+	task, jsonOutput, ok := parseTaskArgs(args, "usage: pbt gate --task <id> [--json]", true, stderr)
+	if !ok {
+		return 3
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	result, err := core.NewService(root).Gate(context.Background(), task)
+	if err != nil {
+		if jsonOutput && result.SchemaVersion != 0 {
+			writeJSON(stdout, stderr, result)
+		}
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	if jsonOutput {
+		if code := writeJSON(stdout, stderr, result); code != 0 {
+			return code
+		}
+	} else {
+		fmt.Fprintf(stdout, "Task %q is %s.\n", result.Task, result.ReasonCode)
+	}
+	return gateExitCode(result)
+}
+
+func runResume(args []string, stdout, stderr io.Writer) int {
+	task, jsonOutput, ok := parseTaskArgs(args, "usage: pbt resume --task <id> [--json]", true, stderr)
+	if !ok {
+		return 3
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	result, err := core.NewService(root).Resume(context.Background(), task)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	if jsonOutput {
+		return writeJSON(stdout, stderr, result)
+	}
+	fmt.Fprintf(stdout, "Task %q resumed.\n", result.Task)
+	return 0
+}
+
+func gateExitCode(result core.Result) int {
+	if result.WorkflowState == core.WorkflowBlocked || result.WorkflowState == core.WorkflowCancelled {
+		return 2
+	}
+	switch result.VerificationState {
+	case core.VerificationPassed, core.VerificationNotApplicable:
+		return 0
+	case core.VerificationFailed:
+		return 1
+	default:
+		return 2
+	}
 }
 
 func parseTaskArgs(args []string, usage string, required bool, stderr io.Writer) (string, bool, bool) {
