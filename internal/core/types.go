@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 // Config configures a PBT run.
 type Config struct {
 	SchemaVersion  int      `json:"schemaVersion"`
@@ -79,4 +81,29 @@ type Result struct {
 	ReasonCode        string            `json:"reasonCode"`
 	NextAction        string            `json:"nextAction"`
 	FollowUp          string            `json:"followUp,omitempty"`
+}
+
+// ProcessResult records a bounded command execution.
+type ProcessResult struct {
+	Stdout          string        `json:"stdout"`
+	Stderr          string        `json:"stderr"`
+	StdoutTruncated bool          `json:"stdoutTruncated"`
+	StderrTruncated bool          `json:"stderrTruncated"`
+	Duration        time.Duration `json:"durationNanoseconds"`
+	ExitCode        int           `json:"exitCode"`
+	TimedOut        bool          `json:"timedOut"`
+	Cancelled       bool          `json:"cancelled"`
+	Error           string        `json:"error,omitempty"`
+}
+
+// InspectResult reports the configured Python test environment.
+type InspectResult struct {
+	SchemaVersion     int      `json:"schemaVersion"`
+	Task              string   `json:"task"`
+	ProjectRoot       string   `json:"projectRoot"`
+	Command           []string `json:"command"`
+	ContractPath      string   `json:"contractPath"`
+	HypothesisVersion string   `json:"hypothesisVersion"`
+	PytestVersion     string   `json:"pytestVersion"`
+	ReasonCode        string   `json:"reasonCode,omitempty"`
 }

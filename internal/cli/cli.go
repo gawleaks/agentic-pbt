@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,9 +19,93 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "begin" {
 		return runBegin(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "inspect" {
+		return runInspect(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "status" {
+		return runStatus(args[1:], stdout, stderr)
+	}
 
 	fmt.Fprintln(stderr, "unknown command")
 	return 3
+}
+
+func runInspect(args []string, stdout, stderr io.Writer) int {
+	task, jsonOutput, ok := parseTaskArgs(args, "usage: pbt inspect --task <id> [--json]", true, stderr)
+	if !ok {
+		return 3
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	result, err := core.NewService(root).Inspect(context.Background(), task)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	if jsonOutput {
+		return writeJSON(stdout, stderr, result)
+	}
+	fmt.Fprintf(stdout, "Hypothesis %s; pytest %s.\n", result.HypothesisVersion, result.PytestVersion)
+	return 0
+}
+
+func runStatus(args []string, stdout, stderr io.Writer) int {
+	task, jsonOutput, ok := parseTaskArgs(args, "usage: pbt status [--task <id>] [--json]", false, stderr)
+	if !ok {
+		return 3
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	result, err := core.NewService(root).Status(context.Background(), task)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	if jsonOutput {
+		return writeJSON(stdout, stderr, result)
+	}
+	fmt.Fprintf(stdout, "Task %q is %s.\n", result.Task, result.VerificationState)
+	return 0
+}
+
+func parseTaskArgs(args []string, usage string, required bool, stderr io.Writer) (string, bool, bool) {
+	var task string
+	var jsonOutput bool
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--task":
+			index++
+			if index == len(args) || task != "" {
+				fmt.Fprintln(stderr, usage)
+				return "", false, false
+			}
+			task = args[index]
+		case "--json":
+			jsonOutput = true
+		default:
+			fmt.Fprintln(stderr, usage)
+			return "", false, false
+		}
+	}
+	if required && task == "" {
+		fmt.Fprintln(stderr, usage)
+		return "", false, false
+	}
+	return task, jsonOutput, true
+}
+
+func writeJSON(stdout, stderr io.Writer, value any) int {
+	if err := json.NewEncoder(stdout).Encode(value); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	return 0
 }
 
 func runBegin(args []string, stdout, stderr io.Writer) int {
@@ -58,11 +143,7 @@ func runBegin(args []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 	if jsonOutput {
-		if err := json.NewEncoder(stdout).Encode(result); err != nil {
-			fmt.Fprintln(stderr, err)
-			return 3
-		}
-		return 0
+		return writeJSON(stdout, stderr, result)
 	}
 	fmt.Fprintf(stdout, "Started task %q; verification is pending.\n", result.Task)
 	return 0
