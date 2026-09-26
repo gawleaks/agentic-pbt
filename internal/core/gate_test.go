@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -24,6 +25,51 @@ func TestGateBlocksAfterThreeDistinctRepairDecisions(t *testing.T) {
 	got := mustGate(t, service, "discount")
 	if got.WorkflowState != WorkflowBlocked || got.FollowUp != "" || got.ReasonCode != "verification_blocked" {
 		t.Fatalf("blocked gate = %#v", got)
+	}
+}
+
+func TestGateConcurrentCallsIssueOneFollowUpAndSpendOneRepair(t *testing.T) {
+	service, root := gateTestService(t)
+	seedFailedGateState(t, root, "run-1")
+
+	const calls = 16
+	start := make(chan struct{})
+	results := make(chan Result, calls)
+	errors := make(chan error, calls)
+	var group sync.WaitGroup
+	for range calls {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			result, err := service.Gate(context.Background(), "discount")
+			if err != nil {
+				errors <- err
+				return
+			}
+			results <- result
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(results)
+	close(errors)
+
+	for err := range errors {
+		t.Fatal(err)
+	}
+	followUps := 0
+	for result := range results {
+		if result.FollowUp != "" {
+			followUps++
+		}
+	}
+	if followUps != 1 {
+		t.Fatalf("follow-ups = %d, want 1", followUps)
+	}
+	state := gateState(t, root)
+	if state.RepairCount != 1 {
+		t.Fatalf("repair count = %d, want 1", state.RepairCount)
 	}
 }
 
@@ -58,6 +104,25 @@ func TestGateCompletesCurrentPassedVerification(t *testing.T) {
 	}
 }
 
+func TestGateMarksBlockedPassedEvidenceStale(t *testing.T) {
+	service, root := gateTestService(t)
+	state := gateState(t, root)
+	state.VerificationState = VerificationPassed
+	state.WorkflowState = WorkflowBlocked
+	state.CurrentFingerprint = gateFingerprint(t, root)
+	setGateState(t, root, state)
+	writeStateTestFile(t, filepath.Join(root, "src", "value.py"), "value = 2\n")
+
+	got := mustGate(t, service, "discount")
+	if got.VerificationState != VerificationStale || got.WorkflowState != WorkflowBlocked {
+		t.Fatalf("gate = %#v", got)
+	}
+	persisted := gateState(t, root)
+	if persisted.VerificationState != VerificationStale || persisted.WorkflowState != WorkflowBlocked {
+		t.Fatalf("state = %#v", persisted)
+	}
+}
+
 func TestGateMarksChangedPassedVerificationStale(t *testing.T) {
 	service, root := gateTestService(t)
 	state := gateState(t, root)
@@ -84,6 +149,28 @@ func TestGateCompletesNotApplicableVerification(t *testing.T) {
 	got := mustGate(t, service, "discount")
 	if got.VerificationState != VerificationNotApplicable || got.WorkflowState != WorkflowComplete || got.ReasonCode != "not_applicable" {
 		t.Fatalf("gate = %#v", got)
+	}
+}
+
+func TestCancelPreservesEvidenceAndSuppressesFollowUps(t *testing.T) {
+	service, root := gateTestService(t)
+	seedFailedGateState(t, root, "run-1")
+	before := gateState(t, root)
+
+	got, err := service.Cancel(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WorkflowState != WorkflowCancelled {
+		t.Fatalf("cancel = %#v", got)
+	}
+	cancelled := gateState(t, root)
+	if cancelled.VerificationState != before.VerificationState || cancelled.CurrentFingerprint != before.CurrentFingerprint || cancelled.LastResultID != before.LastResultID || cancelled.RunDirectory != before.RunDirectory || !reflect.DeepEqual(cancelled.Baseline, before.Baseline) {
+		t.Fatalf("cancel changed evidence: got %#v, want %#v", cancelled, before)
+	}
+	gated := mustGate(t, service, "discount")
+	if gated.WorkflowState != WorkflowCancelled || gated.FollowUp != "" {
+		t.Fatalf("gate after cancel = %#v", gated)
 	}
 }
 

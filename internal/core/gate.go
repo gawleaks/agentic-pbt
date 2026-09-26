@@ -21,13 +21,15 @@ func (service *Service) Gate(ctx context.Context, task string) (Result, error) {
 	if err != nil {
 		return gateSetupResult(task), err
 	}
-	state, err := LoadState(config.ProjectRoot, task)
+	unlock, err := lockGate(ctx, config.ProjectRoot)
 	if err != nil {
 		return gateSetupResult(task), err
 	}
+	defer unlock()
 
-	if state.WorkflowState == WorkflowBlocked || state.WorkflowState == WorkflowCancelled {
-		return gateResult(state), nil
+	state, err := LoadState(config.ProjectRoot, task)
+	if err != nil {
+		return gateSetupResult(task), err
 	}
 	if state.VerificationState == VerificationPassed {
 		fingerprint, err := Fingerprint(config.ProjectRoot, config, filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json"))
@@ -36,12 +38,19 @@ func (service *Service) Gate(ctx context.Context, task string) (Result, error) {
 		}
 		if fingerprint != state.CurrentFingerprint {
 			state.VerificationState = VerificationStale
-			state.WorkflowState = WorkflowActive
+			if state.WorkflowState != WorkflowBlocked && state.WorkflowState != WorkflowCancelled {
+				state.WorkflowState = WorkflowActive
+			}
 			if err := SaveState(config.ProjectRoot, state); err != nil {
 				return gateSetupResult(task), err
 			}
 			return gateResult(state), nil
 		}
+	}
+	if state.WorkflowState == WorkflowBlocked || state.WorkflowState == WorkflowCancelled {
+		return gateResult(state), nil
+	}
+	if state.VerificationState == VerificationPassed {
 		state.WorkflowState = WorkflowComplete
 		if err := SaveState(config.ProjectRoot, state); err != nil {
 			return gateSetupResult(task), err
@@ -77,6 +86,35 @@ func (service *Service) Gate(ctx context.Context, task string) (Result, error) {
 	return result, nil
 }
 
+// Cancel records task cancellation without discarding verification evidence.
+func (service *Service) Cancel(ctx context.Context, task string) (Result, error) {
+	if err := validateTask(task); err != nil {
+		return Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	config, err := service.loadConfig()
+	if err != nil {
+		return Result{}, err
+	}
+	unlock, err := lockGate(ctx, config.ProjectRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+
+	state, err := LoadState(config.ProjectRoot, task)
+	if err != nil {
+		return Result{}, err
+	}
+	state.WorkflowState = WorkflowCancelled
+	if err := SaveState(config.ProjectRoot, state); err != nil {
+		return Result{}, err
+	}
+	return gateResult(state), nil
+}
+
 // Resume reactivates a blocked or cancelled task without discarding its evidence.
 func (service *Service) Resume(ctx context.Context, task string) (Result, error) {
 	if err := validateTask(task); err != nil {
@@ -89,6 +127,12 @@ func (service *Service) Resume(ctx context.Context, task string) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
+	unlock, err := lockGate(ctx, config.ProjectRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+
 	state, err := LoadState(config.ProjectRoot, task)
 	if err != nil {
 		return Result{}, err

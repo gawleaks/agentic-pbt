@@ -34,6 +34,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "resume" {
 		return runResume(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "cancel" {
+		return runCancel(args[1:], stdout, stderr)
+	}
 
 	fmt.Fprintln(stderr, "unknown command")
 	return 3
@@ -140,6 +143,28 @@ func runGate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Task %q is %s.\n", result.Task, result.ReasonCode)
 	}
 	return gateExitCode(result)
+}
+
+func runCancel(args []string, stdout, stderr io.Writer) int {
+	task, jsonOutput, ok := parseTaskArgs(args, "usage: pbt cancel --task <id> [--json]", true, stderr)
+	if !ok {
+		return 3
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	result, err := core.NewService(root).Cancel(context.Background(), task)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	if jsonOutput {
+		return writeJSON(stdout, stderr, result)
+	}
+	fmt.Fprintf(stdout, "Task %q cancelled.\n", result.Task)
+	return 0
 }
 
 func runResume(args []string, stdout, stderr io.Writer) int {

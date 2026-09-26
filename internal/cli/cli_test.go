@@ -270,6 +270,39 @@ func TestGateExitCodes(t *testing.T) {
 	})
 }
 
+func TestCancelCommandRecordsCancellationAndSuppressesFollowUp(t *testing.T) {
+	root := gateCLIRoot(t, core.VerificationFailed, core.WorkflowActive)
+	withCLIRoot(t, root)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"cancel", "--task", "discount", "--json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("Run code = %d, stderr = %q", code, stderr.String())
+	}
+	var cancelled core.Result
+	if err := json.Unmarshal(stdout.Bytes(), &cancelled); err != nil {
+		t.Fatalf("stdout = %q: %v", stdout.String(), err)
+	}
+	if cancelled.WorkflowState != core.WorkflowCancelled || cancelled.VerificationState != core.VerificationFailed {
+		t.Fatalf("cancel result = %#v", cancelled)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run([]string{"gate", "--task", "discount", "--json"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("gate code = %d, want 2; stderr = %q", code, stderr.String())
+	}
+	var gated core.Result
+	if err := json.Unmarshal(stdout.Bytes(), &gated); err != nil {
+		t.Fatalf("gate stdout = %q: %v", stdout.String(), err)
+	}
+	if gated.WorkflowState != core.WorkflowCancelled || gated.FollowUp != "" {
+		t.Fatalf("gate result = %#v", gated)
+	}
+}
+
 func TestResumeCommandReactivatesBlockedTask(t *testing.T) {
 	root := gateCLIRoot(t, core.VerificationFailed, core.WorkflowBlocked)
 	withCLIRoot(t, root)
