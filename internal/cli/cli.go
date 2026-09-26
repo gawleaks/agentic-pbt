@@ -42,6 +42,9 @@ func runInspect(args []string, stdout, stderr io.Writer) int {
 	}
 	result, err := core.NewService(root).Inspect(context.Background(), task)
 	if err != nil {
+		if jsonOutput && result.SchemaVersion != 0 {
+			writeJSON(stdout, stderr, result)
+		}
 		fmt.Fprintln(stderr, err)
 		return 3
 	}

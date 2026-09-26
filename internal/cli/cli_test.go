@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,6 +109,51 @@ func TestCLIJSONWritesOneResultToStdout(t *testing.T) {
 	code := Run([]string{"status", "--task", "discount", "--json"}, stdout, stderr)
 	if code != 0 || !json.Valid(stdout.Bytes()) || strings.Contains(stdout.String(), "\n{") {
 		t.Fatalf("stdout=%q stderr=%q code=%d", stdout.String(), stderr.String(), code)
+	}
+}
+
+func TestInspectJSONWritesFailedVersionResult(t *testing.T) {
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	config := `{
+		"schemaVersion":1,"projectRoot":".","inputs":["src/**"],
+		"python":["false"],"command":["pytest"],"timeoutSeconds":30
+	}`
+	if err := os.WriteFile(filepath.Join(root, "pbt.config.json"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"inspect", "--task", "discount", "--json"}, &stdout, &stderr)
+	if code != 3 {
+		t.Fatalf("Run code = %d, want 3", code)
+	}
+	if !strings.Contains(stderr.String(), "python version query failed") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+
+	decoder := json.NewDecoder(&stdout)
+	var result core.InspectResult
+	if err := decoder.Decode(&result); err != nil {
+		t.Fatalf("stdout = %q: %v", stdout.String(), err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		t.Fatalf("stdout contains more than one result: %q", stdout.String())
+	}
+	if result.SchemaVersion != 1 || result.ReasonCode != "python_version_query_failed" {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
