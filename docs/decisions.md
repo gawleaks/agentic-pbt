@@ -25,10 +25,12 @@ it is agreed; do not add placeholders for undecided items.
   obligations, runs no gate, and queues no PBT follow-up.
 - Pi injects active-task obligations before the agent works, while `pbt`
   validates the contract, collects tests, runs verification, and persists
-  evidence. Pi then runs `pbt gate --task <id> --json` after the agent finishes.
-  It does not gate individual edits.
-- Pi de-duplicates repeated `agent_end` callbacks for the same unsatisfied gate
-  result; only a new recorded verification/gate result can queue another repair.
+  evidence. At Pi's final actionable `agent_before_settle` boundary, it runs
+  `pbt gate --task <id> --json` only for a completed outcome. It does not gate
+  individual edits or auto-continue aborted/error outcomes.
+- Pi de-duplicates repeated `agent_before_settle` callbacks for the same
+  unsatisfied gate result; only a new recorded verification/gate result can
+  queue another repair.
 - An unsatisfied gate queues at most three labelled corrective follow-ups,
   including reminders to run verification. Then the task is `blocked` and Pi
   stops automatic continuation.

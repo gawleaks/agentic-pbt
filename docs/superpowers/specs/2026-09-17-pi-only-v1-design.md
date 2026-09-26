@@ -37,7 +37,7 @@ implement freshness, or track retries itself. It:
 
 1. detects an active task for its current worktree;
 2. injects concise instructions to read the bundled PBT skill and use `pbt`;
-3. calls `pbt gate --json` at `agent_end`; and
+3. calls `pbt gate --json` at `agent_before_settle` for completed outcomes; and
 4. renders an actionable setup error if an active task cannot resolve `pbt`.
 
 With no active task, the extension injects nothing, runs no gate, and queues no
@@ -191,15 +191,17 @@ focused Hypothesis reference and links to the official documentation:
 <https://hypothesis.readthedocs.io/en/latest/>. Fetching that documentation is
 an agent action, not a `pbt` feature.
 
-At `agent_end`, Pi asks `pbt gate` for a decision. A satisfied decision requires
-no action. A new unsatisfied decision queues a labelled corrective follow-up
-with the real failure/evidence location and next action. The state ledger
-de-duplicates repeated callbacks for the same result. At most three follow-ups,
-including missing-verification reminders, are issued. Thereafter the task is
-`blocked` and Pi does not auto-continue.
+At `agent_before_settle`, Pi asks `pbt gate` for a decision only when the
+outcome is `completed`. A satisfied decision requires no action. A new
+unsatisfied decision appends a labelled corrective follow-up with the real
+failure/evidence location and next action, then returns `continue: true`. The
+state ledger de-duplicates repeated callbacks for the same result. At most three
+follow-ups, including missing-verification reminders, are issued. Thereafter the
+task is `blocked` and Pi does not auto-continue.
 
-Escape or other user cancellation sets `workflowState=cancelled`, retains
-artifacts, and suppresses future automatic follow-ups. An explicit
+For `aborted` or `error` outcomes, Pi returns no continuation. Escape or other
+user cancellation therefore retains artifacts and suppresses future automatic
+follow-ups. An explicit
 `pbt resume --task <id>` restores `active` and grants a fresh three-follow-up
 budget without changing the original baseline or deleting evidence.
 
@@ -215,7 +217,7 @@ Core fixture tests must prove:
 - dirty-baseline preservation, lock behavior, and retry de-duplication.
 
 Pi fixture tests must prove the installed Pi version's active-task policy
-injection, `agent_end` gate invocation, labelled bounded de-duplicated follow-up,
-and cancellation behavior. These are workflow guardrails, not a security
+injection, `agent_before_settle` gate invocation, labelled bounded de-duplicated
+follow-up, and cancellation behavior. These are workflow guardrails, not a security
 boundary: users may disable the extension, while CI can run `pbt verify` and
 `pbt gate` directly.
