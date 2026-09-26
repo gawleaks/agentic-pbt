@@ -11,6 +11,7 @@ import (
 
 const (
 	processOutputLimit = 64 * 1024
+	runArtifactLimit   = 64 * 1024
 	pythonVersionQuery = "import json, hypothesis, pytest\nprint(json.dumps({\"hypothesis\": hypothesis.__version__, \"pytest\": pytest.__version__}))"
 )
 

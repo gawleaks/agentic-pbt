@@ -133,6 +133,157 @@ func TestVerifyMarksChangedFingerprintStale(t *testing.T) {
 	}
 }
 
+func TestVerifyCollectionFailurePersistsPostCollectionDigest(t *testing.T) {
+	service, _ := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	config, err := service.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractPath := filepath.Join(config.ProjectRoot, ".pbt", "contracts", "discount.json")
+	initial, err := Fingerprint(config.ProjectRoot, config, contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.Run = func(_ context.Context, argv []string, _ string, _ []string, _ int) ProcessResult {
+		if hasArgument(argv, "--collect-only") {
+			writeStateTestFile(t, filepath.Join(config.ProjectRoot, "src", "value.py"), "value = 2\n")
+			return ProcessResult{ExitCode: 1}
+		}
+		t.Fatal("execution must not run after collection failure")
+		return ProcessResult{}
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ReasonCode != "pytest_collection_failed" {
+		t.Fatalf("result = %#v", result)
+	}
+	want, err := Fingerprint(config.ProjectRoot, config, contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadState(config.ProjectRoot, "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.CurrentFingerprint != want {
+		t.Fatalf("current fingerprint = %q, want %q", state.CurrentFingerprint, want)
+	}
+	if initial == want {
+		t.Fatal("test mutation did not change the fingerprint")
+	}
+}
+
+func TestVerifyFailsWhenJUnitArtifactExceedsLimit(t *testing.T) {
+	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	originalRun := service.Run
+	service.Run = func(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {
+		result := originalRun(ctx, argv, dir, env, limit)
+		if hasArgument(argv, "--collect-only") {
+			return result
+		}
+		junitPath := argumentAfter(argv, "--junitxml")
+		content := []byte("<testsuites><testsuite/></testsuites>" + strings.Repeat(" ", 64*1024))
+		if err := os.WriteFile(junitPath, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationFailed || result.ReasonCode != "artifact_limit_exceeded" {
+		t.Fatalf("result = %#v", result)
+	}
+	state, err := LoadState(root, "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(state.RunDirectory, "junit.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 64*1024 {
+		t.Fatalf("JUnit size = %d, want %d", info.Size(), 64*1024)
+	}
+}
+
+func TestVerifyFailsWhenNodeResultsArtifactExceedsLimit(t *testing.T) {
+	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	originalRun := service.Run
+	service.Run = func(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {
+		result := originalRun(ctx, argv, dir, env, limit)
+		if hasArgument(argv, "--collect-only") {
+			return result
+		}
+		nodeResultsPath := environmentValue(env, "PBT_NODE_RESULTS")
+		content := `{"nodeid":"` + strings.Repeat("x", 64*1024) + `","outcome":"passed"}` + "\n"
+		file, err := os.OpenFile(nodeResultsPath, os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.WriteString(content); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationFailed || result.ReasonCode != "artifact_limit_exceeded" {
+		t.Fatalf("result = %#v", result)
+	}
+	state, err := LoadState(root, "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(state.RunDirectory, "node-results.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 64*1024 {
+		t.Fatalf("node results size = %d, want %d", info.Size(), 64*1024)
+	}
+}
+
+func TestPersistVerificationStoresComparedPostRunDigest(t *testing.T) {
+	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	config, err := service.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := LoadState(root, "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractPath := filepath.Join(root, ".pbt", "contracts", "discount.json")
+	postRunDigest, err := Fingerprint(root, config, contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeStateTestFile(t, filepath.Join(root, "src", "value.py"), "value = 2\n")
+
+	if _, err := service.persistVerification(config, state, "discount", t.TempDir(), "verification_passed", postRunDigest); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := LoadState(root, "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.CurrentFingerprint != postRunDigest {
+		t.Fatalf("current fingerprint = %q, want compared post-run digest %q", persisted.CurrentFingerprint, postRunDigest)
+	}
+}
+
 func TestVerifyPreservesPythonPathAndUsesBundledReporter(t *testing.T) {
 	t.Setenv("PYTHONPATH", "existing")
 	service, _ := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})

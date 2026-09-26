@@ -71,13 +71,13 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 		return Result{}, err
 	}
 	if collection.TimedOut {
-		return service.persistVerification(config, state, task, runDirectory, "pytest_timed_out")
+		return service.persistVerification(config, state, task, runDirectory, "pytest_timed_out", "")
 	}
 	if collection.ExitCode != 0 || collection.Error != "" {
-		return service.persistVerification(config, state, task, runDirectory, "pytest_collection_failed")
+		return service.persistVerification(config, state, task, runDirectory, "pytest_collection_failed", "")
 	}
 	if !collectedRequiredProperties(collection.Stdout, contract.Properties) {
-		return service.persistVerification(config, state, task, runDirectory, "required_test_not_collected")
+		return service.persistVerification(config, state, task, runDirectory, "required_test_not_collected", "")
 	}
 
 	nodeResultsPath := filepath.Join(runDirectory, "node-results.jsonl")
@@ -97,43 +97,50 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 		return Result{}, err
 	}
 
+	artifactLimitExceeded, err := enforceArtifactLimit(junitPath, nodeResultsPath)
+	if err != nil {
+		return Result{}, err
+	}
 	after, err := Fingerprint(config.ProjectRoot, config, contractPath)
 	if err != nil {
 		return Result{}, err
 	}
 	if before != after {
-		return service.persistVerification(config, state, task, runDirectory, "stale")
+		return service.persistVerification(config, state, task, runDirectory, "stale", after)
+	}
+	if artifactLimitExceeded {
+		return service.persistVerification(config, state, task, runDirectory, "artifact_limit_exceeded", after)
 	}
 	if execution.TimedOut {
-		return service.persistVerification(config, state, task, runDirectory, "pytest_timed_out")
+		return service.persistVerification(config, state, task, runDirectory, "pytest_timed_out", after)
 	}
 	if execution.ExitCode != 0 || execution.Error != "" {
-		return service.persistVerification(config, state, task, runDirectory, "pytest_failed")
+		return service.persistVerification(config, state, task, runDirectory, "pytest_failed", after)
 	}
 	if err := validateJUnit(junitPath); err != nil {
-		return service.persistVerification(config, state, task, runDirectory, "junit_invalid")
+		return service.persistVerification(config, state, task, runDirectory, "junit_invalid", after)
 	}
 	nodeResults, err := parseNodeResults(nodeResultsPath)
 	if err != nil {
-		return service.persistVerification(config, state, task, runDirectory, "node_results_invalid")
+		return service.persistVerification(config, state, task, runDirectory, "node_results_invalid", after)
 	}
 	for _, property := range contract.Properties {
 		outcome, found := nodeResults[property.Test]
 		if !found {
-			return service.persistVerification(config, state, task, runDirectory, "required_test_missing_result")
+			return service.persistVerification(config, state, task, runDirectory, "required_test_missing_result", after)
 		}
 		if outcome == "passed" {
 			continue
 		}
 		if outcome == "skipped" {
-			return service.persistVerification(config, state, task, runDirectory, "required_test_skipped")
+			return service.persistVerification(config, state, task, runDirectory, "required_test_skipped", after)
 		}
-		return service.persistVerification(config, state, task, runDirectory, "required_test_failed")
+		return service.persistVerification(config, state, task, runDirectory, "required_test_failed", after)
 	}
-	return service.persistVerification(config, state, task, runDirectory, "verification_passed")
+	return service.persistVerification(config, state, task, runDirectory, "verification_passed", after)
 }
 
-func (service *Service) persistVerification(config *Config, state TaskState, task, runDirectory, reasonCode string) (Result, error) {
+func (service *Service) persistVerification(config *Config, state TaskState, task, runDirectory, reasonCode, fingerprint string) (Result, error) {
 	verificationState := VerificationFailed
 	if reasonCode == "verification_passed" {
 		verificationState = VerificationPassed
@@ -145,9 +152,12 @@ func (service *Service) persistVerification(config *Config, state TaskState, tas
 	if err := writeJSONAtomic(filepath.Join(runDirectory, "result.json"), result); err != nil {
 		return Result{}, err
 	}
-	fingerprint, err := Fingerprint(config.ProjectRoot, config, filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json"))
-	if err != nil {
-		return Result{}, err
+	if fingerprint == "" {
+		var err error
+		fingerprint, err = Fingerprint(config.ProjectRoot, config, filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json"))
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	state.CurrentFingerprint = fingerprint
 	state.LastResultID = filepath.Base(runDirectory)
@@ -157,6 +167,27 @@ func (service *Service) persistVerification(config *Config, state TaskState, tas
 		return Result{}, err
 	}
 	return result, nil
+}
+
+func enforceArtifactLimit(paths ...string) (bool, error) {
+	exceeded := false
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if info.Size() <= runArtifactLimit {
+			continue
+		}
+		if err := os.Truncate(path, runArtifactLimit); err != nil {
+			return false, err
+		}
+		exceeded = true
+	}
+	return exceeded, nil
 }
 
 func verificationResult(state TaskState, task string, verificationState VerificationState, reasonCode string) Result {
