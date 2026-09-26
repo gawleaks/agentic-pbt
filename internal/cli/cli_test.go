@@ -157,6 +157,65 @@ func TestInspectJSONWritesFailedVersionResult(t *testing.T) {
 	}
 }
 
+func TestVerifyJSONWritesVerificationFailure(t *testing.T) {
+	root := t.TempDir()
+	if output, err := exec.Command("git", "init", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	config := `{
+		"schemaVersion":1,"projectRoot":".","inputs":["src/**"],
+		"python":["python"],"command":["false"],"timeoutSeconds":30
+	}`
+	if err := os.WriteFile(filepath.Join(root, "pbt.config.json"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "value.py"), []byte("value = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	contract := `{
+		"schemaVersion":1,"task":"discount","applicability":"required","behavior":"discount",
+		"properties":[{"id":"discount","statement":"total","generator":"amounts","oracle":"expected","test":"tests/test_discount.py::test_total"}]
+	}`
+	if err := os.MkdirAll(filepath.Join(root, ".pbt", "contracts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".pbt", "contracts", "discount.json"), []byte(contract), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", root, "add", ".").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", root, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "initial").CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v\n%s", err, output)
+	}
+	if _, err := core.Begin(root, "discount"); err != nil {
+		t.Fatal(err)
+	}
+
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"verify", "--task", "discount", "--json"}, &stdout, &stderr)
+	var result core.Result
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("stdout = %q: %v", stdout.String(), err)
+	}
+	if code != 1 || result.ReasonCode != "pytest_collection_failed" || stderr.Len() != 0 {
+		t.Fatalf("code=%d result=%#v stderr=%q", code, result, stderr.String())
+	}
+}
+
 func TestRunRejectsUnknownCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

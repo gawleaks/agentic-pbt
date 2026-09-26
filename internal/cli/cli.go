@@ -25,6 +25,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "status" {
 		return runStatus(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "verify" {
+		return runVerify(args[1:], stdout, stderr)
+	}
 
 	fmt.Fprintln(stderr, "unknown command")
 	return 3
@@ -75,6 +78,34 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "Task %q is %s.\n", result.Task, result.VerificationState)
 	return 0
+}
+
+func runVerify(args []string, stdout, stderr io.Writer) int {
+	task, jsonOutput, ok := parseTaskArgs(args, "usage: pbt verify --task <id> [--json]", true, stderr)
+	if !ok {
+		return 3
+	}
+	root, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	result, err := core.NewService(root).Verify(context.Background(), task)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 3
+	}
+	if jsonOutput {
+		if code := writeJSON(stdout, stderr, result); code != 0 {
+			return code
+		}
+	} else {
+		fmt.Fprintf(stdout, "Task %q is %s.\n", result.Task, result.VerificationState)
+	}
+	if result.VerificationState == core.VerificationPassed || result.VerificationState == core.VerificationNotApplicable {
+		return 0
+	}
+	return 1
 }
 
 func parseTaskArgs(args []string, usage string, required bool, stderr io.Writer) (string, bool, bool) {

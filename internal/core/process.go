@@ -12,6 +12,18 @@ import (
 // RunFunc runs a command without invoking a shell.
 type RunFunc func(context.Context, []string, string, []string, int) ProcessResult
 
+func replaceEnvironment(env []string, key, value string) []string {
+	prefix := key + "="
+	updated := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if len(entry) >= len(prefix) && entry[:len(prefix)] == prefix {
+			continue
+		}
+		updated = append(updated, entry)
+	}
+	return append(updated, prefix+value)
+}
+
 // RunProcess executes argv with capped stdout and stderr capture.
 func RunProcess(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {
 	started := time.Now()
