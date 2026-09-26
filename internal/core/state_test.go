@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -105,6 +106,47 @@ func TestBeginExcludesNestedLocalArtifacts(t *testing.T) {
 	}
 	if _, err := runGit("-C", root, "check-ignore", "app/.pbt/state/active.json"); err != nil {
 		t.Fatalf("nested active state is not excluded: %v", err)
+	}
+}
+
+func TestWriteActiveMarkerExclusivePublishesValidMarker(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "active.json")
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var group sync.WaitGroup
+
+	for _, task := range []string{"first", "second"} {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			results <- writeActiveMarkerExclusive(path, activeTask{Task: task})
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(results)
+
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("successful marker publications = %d, want 1", successes)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var marker activeTask
+	if err := json.Unmarshal(content, &marker); err != nil {
+		t.Fatalf("active marker is not valid JSON: %v", err)
+	}
+	if marker.Task != "first" && marker.Task != "second" {
+		t.Fatalf("active task = %q, want a published task", marker.Task)
 	}
 }
 

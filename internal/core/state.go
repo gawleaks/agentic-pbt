@@ -101,28 +101,64 @@ func SaveState(root string, state TaskState) error {
 }
 
 func createActiveTask(root, task string) error {
-	path := filepath.Join(root, ".pbt", "state", "active.json")
+	return writeActiveMarkerExclusive(
+		filepath.Join(root, ".pbt", "state", "active.json"),
+		activeTask{Task: task},
+	)
+}
+
+func writeActiveMarkerExclusive(path string, marker activeTask) error {
+	content, err := json.Marshal(marker)
+	if err != nil {
+		return err
+	}
+	content = append(content, '\n')
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if os.IsExist(err) {
-		return fmt.Errorf("an active task already exists")
-	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
 	}
-	if err := json.NewEncoder(file).Encode(activeTask{Task: task}); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
 		return err
 	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
+	if _, err := temporary.Write(content); err != nil {
+		_ = temporary.Close()
 		return err
 	}
-	return nil
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(temporaryPath, path); os.IsExist(err) {
+		return fmt.Errorf("an active task already exists")
+	} else if err != nil {
+		return err
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		_ = directory.Close()
+		return err
+	}
+	return directory.Close()
 }
 
 func addLocalExcludes(root string) error {
