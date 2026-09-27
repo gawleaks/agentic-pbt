@@ -292,6 +292,14 @@ carry live evidence.
 
 Deterministic contract and fixture checks cover active-task policy injection, a single
 labelled gate repair, inactive-task inertness, setup errors, satisfied/duplicate/blocked
-gates, and aborted/error non-continuation. The interactive Pi smoke test was not run:
-it requires a TTY observation (policy delivery, labelled repair, and Escape) and no
-noninteractive equivalent was performed.
+gates, and aborted/error non-continuation.
+
+**Interactive Pi smoke (2026-09-17):** With a temporary active-task fixture and
+stateful fake `pbt`, `PBT_BIN="$(pwd)/pbt" pi -e integrations/pi/index.ts` rendered
+`[agentic-pbt-policy]` for `smoke-task` and one `[agentic-pbt-repair]` for the first
+unsatisfied gate. In a separate active run, Escape during `Working` rendered
+`Operation aborted`; the fake recorded `status --json` only, with no gate call or
+repair. The duplicate-gate runtime observation remains unverified: the continued
+repair turn stayed `Working` for over 120 seconds and never reached the fake's second
+(empty-follow-up) gate response. The deterministic contract test covers that mapping,
+but this is not interactive evidence for it.
