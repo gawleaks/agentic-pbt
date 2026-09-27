@@ -4,6 +4,11 @@
 **Probe source:** `testdata/m0-runtime-probes/`
 **Status:** In progress
 
+> **Archive status.** This is retained raw M0 compatibility evidence, captured
+> before the delivered Pi-only v1 workflow. Its observations, including the
+> Claude Code fixture results, are no longer v1 delivery blockers and do not
+> require a Claude session in the v1 verification suite.
+
 > **Evidence retention.** The per-task reports in
 > `.superpowers/sdd/2026-09-12-m0-runtime-integration-probes/` are **not tracked in
 > Git** (`.superpowers/` is in `.gitignore`) and the probe fixtures and JSONL logs
@@ -265,7 +270,11 @@ Nothing in this list has live evidence. M2/M3 must not assume any of it.
 14. Claude resume/compact `source` field via the *shipped* hook (seen only through a
     throwaway `/tmp` debug copy).
 
-## M1/M2/M3 consequences
+## Historical M1/M2/M3 consequences (archived)
+
+The following was the contemporaneous interpretation of the M0 observations.
+It is preserved as evidence context only; it does not define Pi-only v1 scope,
+delivery order, or blockers.
 
 - M1 (Go core, Python testing vertical slice) has no Pi/Claude runtime dependency; nothing in this record blocks it.
 - M2 (Pi package) must not assume policy-message delivery, queued follow-up, cancellation, compaction, worker-extension policy loading, or separate-worktree workers behave as sketched in the spec — none has live evidence. Run the deferred manual Pi session (see `testdata/m0-runtime-probes/README.md`) first. Any future policy-injection probe must use a marker carried **in the injected text itself**, not one the prompt dictates, or the result will not discriminate.
@@ -282,11 +291,10 @@ hook-firing-only, and 5 are Not run. The [Unproven M0 points](#unproven-m0-point
 list enumerates 14 open items. Per the exit criteria, M0 stays **In progress** until those manual sessions
 are run and recorded.
 
-**Decision: proceed with documented limitation.** M1 (Go core), which has no Pi/Claude
-runtime dependency, may proceed without waiting on the remaining manual evidence. M2
-and M3 must not begin implementation that assumes any item in the unproven list, and
-must not describe the Claude Stop-hook 2-count as a guaranteed bound, until those rows
-carry live evidence.
+**Archived decision: proceed with documented limitation.** This records the
+contemporaneous M0 conclusion. Pi-only v1 has since been delivered with its
+standalone CLI and thin Pi adapter; the remaining observations are compatibility
+provenance, not delivery blockers. Claude Code integration remains deferred.
 
 ## Task 8 Pi lifecycle adapter
 

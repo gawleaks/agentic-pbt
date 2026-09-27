@@ -4,6 +4,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 compat="$root/docs/compatibility/runtime-integration-m0.md"
 progress="$root/docs/implementation-progress.md"
+readme="$root/README.md"
 
 require() {
   grep -Fq "$1" "$2" || { printf 'missing %s in %s\n' "$1" "$2" >&2; exit 1; }
@@ -16,5 +17,11 @@ require '## Unproven M0 points' "$compat"
 require '**State:** In progress' "$progress"
 require 'has live evidence for policy delivery, hook firing, process invocation, queued follow-up, cancellation, and compaction.' "$progress"
 require 'Claude `additionalContext` delivery is live-verified with valid `hookEventName` output.' "$progress"
+require 'go install ./cmd/pbt' "$readme"
+require 'PBT_BIN' "$readme"
+require 'pbt begin --task' "$readme"
+require 'pbt verify --task' "$readme"
+require 'Pi-only v1' "$progress"
+require 'Claude Code integration is deferred' "$progress"
 
 printf '%s\n' 'PASS: M0 documentation self-check'
