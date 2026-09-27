@@ -51,7 +51,7 @@ async function activeTask(cwd: string) {
 
 function resolvePbt() {
   const pbt = process.env.PBT_BIN ?? "pbt";
-  if (process.env.PBT_BIN && !isAbsolute(pbt)) {
+  if (process.env.PBT_BIN !== undefined && !isAbsolute(pbt)) {
     return "PBT_BIN must be an absolute path";
   }
   return pbt;

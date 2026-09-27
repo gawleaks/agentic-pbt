@@ -126,6 +126,24 @@ try {
   }
 
   {
+    process.env.PBT_BIN = "";
+    const cwd = await fixture();
+    const { handlers, calls } = load([]);
+    const policy = await handlers.get("before_agent_start")({}, { cwd });
+    assert.equal(policy.message.customType, "agentic-pbt-setup");
+    assert.match(policy.message.content, /PBT_BIN must be an absolute path/);
+    assert.deepEqual(
+      await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
+      {
+        entries: [{ type: "custom_message", customType: "agentic-pbt-setup", content: "PBT setup error: PBT_BIN must be an absolute path", display: true }],
+        continue: false,
+      },
+    );
+    assert.equal(calls.length, 0);
+    await rm(cwd, { recursive: true });
+  }
+
+  {
     process.env.PBT_BIN = "relative-pbt";
     const cwd = await fixture();
     const { handlers, calls } = load([]);

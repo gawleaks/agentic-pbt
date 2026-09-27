@@ -303,3 +303,8 @@ repair. The duplicate-gate runtime observation remains unverified: the continued
 repair turn stayed `Working` for over 120 seconds and never reached the fake's second
 (empty-follow-up) gate response. The deterministic contract test covers that mapping,
 but this is not interactive evidence for it.
+
+**Task 8 fix round 1 (2026-09-27):** The contract test covers empty and relative
+`PBT_BIN` overrides. Each is rejected as a setup error before `pi.exec`, with
+`continue: false` at settlement. `integrations/pi/verify-extension.sh`, `go test
+./...`, and `go vet ./...` passed locally.
