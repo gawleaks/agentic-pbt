@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+case "$*" in
+  'status --json')
+    printf '%s\n' '{"schemaVersion":1,"task":"repair","verificationState":"pending","workflowState":"active","reasonCode":"verification_missing","nextAction":"verify"}'
+    ;;
+  'gate --task repair --json')
+    printf '%s\n' '{"schemaVersion":1,"task":"repair","verificationState":"failed","workflowState":"active","reasonCode":"verification_failed","nextAction":"verify","followUp":"Run pbt verify"}'
+    exit 1
+    ;;
+  *)
+    printf '%s\n' "unexpected pbt arguments: $*" >&2
+    exit 2
+    ;;
+esac

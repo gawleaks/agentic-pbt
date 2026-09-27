@@ -287,3 +287,11 @@ runtime dependency, may proceed without waiting on the remaining manual evidence
 and M3 must not begin implementation that assumes any item in the unproven list, and
 must not describe the Claude Stop-hook 2-count as a guaranteed bound, until those rows
 carry live evidence.
+
+## Task 8 Pi lifecycle adapter
+
+Deterministic contract and fixture checks cover active-task policy injection, a single
+labelled gate repair, inactive-task inertness, setup errors, satisfied/duplicate/blocked
+gates, and aborted/error non-continuation. The interactive Pi smoke test was not run:
+it requires a TTY observation (policy delivery, labelled repair, and Escape) and no
+noninteractive equivalent was performed.
