@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "task": "docs-only",
+  "applicability": "not_applicable",
+  "reason": "This fixture task changes documentation only and has no executable behavior."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "projectRoot": ".",
+  "inputs": ["src/**/*.py", "tests/**/*.py", "pyproject.toml", "uv.lock"],
+  "python": ["uv", "run", "python"],
+  "command": ["uv", "run", "pytest", "tests/property"],
+  "timeoutSeconds": 120
+}

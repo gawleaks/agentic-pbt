@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "task": "discount",
+  "applicability": "required",
+  "behavior": "Apply a whole-number percentage discount to a non-negative subtotal.",
+  "properties": [
+    {
+      "id": "discount_total",
+      "statement": "The discounted total equals the subtotal multiplied by the remaining percentage.",
+      "generator": "subtotal integers from 0 through 10000 and percent integers from 0 through 100",
+      "oracle": "Independently compute subtotal * (100 - percent) // 100 with integer arithmetic.",
+      "test": "tests/property/test_discount.py::test_discount_total"
+    }
+  ]
+}

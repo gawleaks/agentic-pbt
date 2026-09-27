@@ -1,0 +1,12 @@
+[project]
+name = "pbt-v1-python-fixture"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "hypothesis",
+  "pytest",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests/property"]
