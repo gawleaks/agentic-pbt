@@ -15,7 +15,11 @@ assert_state() {
   printf '%s\n' "$1" | python3 -c '
 import json
 import sys
-assert json.load(sys.stdin)["verificationState"] == sys.argv[1]
+
+actual = json.load(sys.stdin)["verificationState"]
+expected = sys.argv[1]
+if actual != expected:
+    sys.exit(f"verificationState mismatch: actual={actual!r}, expected={expected!r}")
 ' "$2"
 }
 
