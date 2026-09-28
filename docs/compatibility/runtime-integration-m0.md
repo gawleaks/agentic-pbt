@@ -316,3 +316,8 @@ but this is not interactive evidence for it.
 `PBT_BIN` overrides. Each is rejected as a setup error before `pi.exec`, with
 `continue: false` at settlement. `integrations/pi/verify-extension.sh`, `go test
 ./...`, and `go vet ./...` passed locally.
+
+**Fix round 2 (2026-09-28):** A blocked task is inert in the Pi adapter rather
+than reported as a setup error. Retrying verification after a corrected Python
+setup failure clears the setup block while retaining the repair ledger. Focused
+Go recovery tests and the Pi adapter contract passed locally.

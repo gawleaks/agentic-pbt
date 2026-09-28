@@ -79,7 +79,7 @@ async function activeTask(pi: ExtensionAPI, signal: AbortSignal | undefined): Pr
   if (typeof result.task !== "string" || result.task === "") {
     throw new Error("pbt status returned no task");
   }
-  if (result.workflowState === "complete" || result.workflowState === "cancelled") {
+  if (result.workflowState === "complete" || result.workflowState === "cancelled" || result.workflowState === "blocked") {
     return;
   }
   if (result.workflowState !== "active") {

@@ -63,11 +63,22 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
+	if contract.Applicability != "not_applicable" {
+		if err := service.checkPython(ctx, config); err != nil {
+			return service.persistVerification(config, state, task, runDirectory, "python_version_query_failed", before)
+		}
+	}
+	if state.SetupError {
+		state.SetupError = false
+		if state.RepairCount < repairBudget {
+			state.WorkflowState = WorkflowActive
+		}
+		if err := SaveState(config.ProjectRoot, state); err != nil {
+			return Result{}, err
+		}
+	}
 	if contract.Applicability == "not_applicable" {
 		return service.persistVerification(config, state, task, runDirectory, "verification_not_applicable", before)
-	}
-	if err := service.checkPython(ctx, config); err != nil {
-		return service.persistVerification(config, state, task, runDirectory, "python_version_query_failed", before)
 	}
 	if err := os.WriteFile(filepath.Join(runDirectory, "pbt_pytest_reporter.py"), []byte(pytest.Reporter), 0o600); err != nil {
 		return Result{}, err

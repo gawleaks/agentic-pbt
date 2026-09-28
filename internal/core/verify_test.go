@@ -100,6 +100,104 @@ func TestVerifyBlocksMissingHypothesisSetup(t *testing.T) {
 	}
 }
 
+func TestVerifyKeepsSetupBlockUntilPythonCheckPasses(t *testing.T) {
+	service, root := verifyTestService(
+		t,
+		discountNode+"\n",
+		`{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n",
+		ProcessResult{},
+	)
+	state := gateState(t, root)
+	state.WorkflowState = WorkflowBlocked
+	state.SetupError = true
+	setGateState(t, root, state)
+	service.Run = func(_ context.Context, argv []string, _ string, _ []string, _ int) ProcessResult {
+		if hasArgument(argv, "-c") {
+			state := gateState(t, root)
+			setupBlock := state.SetupError && state.WorkflowState == WorkflowBlocked
+			isRunning := state.VerificationState == VerificationRunning
+			if !setupBlock || !isRunning {
+				t.Fatalf("state before Python check = %#v", state)
+			}
+			return ProcessResult{ExitCode: 1, Stderr: "No module named hypothesis"}
+		}
+		t.Fatal("pytest ran despite missing Hypothesis")
+		return ProcessResult{}
+	}
+
+	if _, err := service.Verify(context.Background(), "discount"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyRecoversAfterPythonSetupIsCorrected(t *testing.T) {
+	service, root := verifyTestService(
+		t,
+		discountNode+"\n",
+		`{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n",
+		ProcessResult{},
+	)
+	state := gateState(t, root)
+	state.RepairCount = 2
+	state.LastGateRunID = "run-2"
+	setGateState(t, root, state)
+
+	originalRun := service.Run
+	service.Run = func(_ context.Context, argv []string, _ string, _ []string, _ int) ProcessResult {
+		if hasArgument(argv, "-c") {
+			return ProcessResult{ExitCode: 1, Stderr: "No module named hypothesis"}
+		}
+		t.Fatal("pytest ran despite missing Hypothesis")
+		return ProcessResult{}
+	}
+	if _, err := service.Verify(context.Background(), "discount"); err != nil {
+		t.Fatal(err)
+	}
+
+	service.Run = originalRun
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationPassed || result.WorkflowState != WorkflowActive {
+		t.Fatalf("result = %#v", result)
+	}
+	state = gateState(t, root)
+	setupRecovered := !state.SetupError && state.WorkflowState == WorkflowActive
+	ledgerRetained := state.RepairCount == 2 && state.LastGateRunID == "run-2"
+	if !setupRecovered || !ledgerRetained {
+		t.Fatalf("state = %#v", state)
+	}
+}
+
+func TestVerifyDoesNotReactivateExhaustedRepairBlock(t *testing.T) {
+	service, root := verifyTestService(
+		t,
+		discountNode+"\n",
+		`{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n",
+		ProcessResult{},
+	)
+	state := gateState(t, root)
+	state.WorkflowState = WorkflowBlocked
+	state.SetupError = true
+	state.RepairCount = repairBudget
+	setGateState(t, root, state)
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationPassed || result.WorkflowState != WorkflowBlocked {
+		t.Fatalf("result = %#v", result)
+	}
+	state = gateState(t, root)
+	stillBlocked := !state.SetupError && state.WorkflowState == WorkflowBlocked
+	ledgerExhausted := state.RepairCount == repairBudget
+	if !stillBlocked || !ledgerExhausted {
+		t.Fatalf("state = %#v", state)
+	}
+}
+
 func TestVerifyPersistsRunningStateAndSerializesCancel(t *testing.T) {
 	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
 	started := make(chan struct{})
