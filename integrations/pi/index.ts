@@ -68,7 +68,7 @@ function isNoActiveTask(error: string) {
   return error.includes("no active PBT task") || (error.includes("active.json") && error.includes("no such file or directory"));
 }
 
-async function activeTask(pi: ExtensionAPI, signal: AbortSignal | undefined): Promise<string | undefined> {
+async function activeTask(pi: ExtensionAPI, signal: AbortSignal | undefined, allowComplete = false): Promise<string | undefined> {
   const pbt = resolvePbt();
   if (pbt.startsWith("PBT_BIN")) throw new Error(pbt);
   const result = await run(pi, pbt, ["status", "--json"], signal);
@@ -79,9 +79,8 @@ async function activeTask(pi: ExtensionAPI, signal: AbortSignal | undefined): Pr
   if (typeof result.task !== "string" || result.task === "") {
     throw new Error("pbt status returned no task");
   }
-  if (result.workflowState === "complete" || result.workflowState === "cancelled" || result.workflowState === "blocked") {
-    return;
-  }
+  if (result.workflowState === "complete" && allowComplete) return result.task;
+  if (result.workflowState === "complete" || result.workflowState === "cancelled" || result.workflowState === "blocked") return;
   if (result.workflowState !== "active") {
     throw new Error("pbt status returned invalid workflowState");
   }
@@ -111,7 +110,7 @@ export default function (pi: ExtensionAPI) {
     const isCancellation = event.outcome === "aborted" || event.outcome === "error";
     let task: string | undefined;
     try {
-      task = await activeTask(pi, isCancellation ? undefined : ctx.signal);
+      task = await activeTask(pi, isCancellation ? undefined : ctx.signal, event.outcome === "completed");
     } catch (error) {
       if (event.outcome === "completed") {
         return { entries: [{ type: "custom_message", ...setupMessage(error instanceof Error ? error.message : "pbt status failed") }], continue: false };

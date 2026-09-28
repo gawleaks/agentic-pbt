@@ -93,6 +93,28 @@ try {
 
   {
     const cwd = await fixture();
+    const { handlers, calls } = load([
+      json({ schemaVersion: 1, task: "repair", workflowState: "complete" }),
+      json({ schemaVersion: 1, task: "repair", workflowState: "complete" }),
+      json({ schemaVersion: 1, followUp: "Run pbt verify" }, 1),
+    ]);
+    assert.equal(await handlers.get("before_agent_start")({}, { cwd }), undefined);
+    assert.deepEqual(
+      await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
+      {
+        entries: [{ type: "custom_message", customType: "agentic-pbt-repair", content: "Run pbt verify", display: true }],
+        continue: true,
+      },
+    );
+    assert.deepEqual(calls.map(({ args }) => args), [
+      ["status", "--json"],
+      ["status", "--json"], ["gate", "--task", "repair", "--json"],
+    ]);
+    await rm(cwd, { recursive: true });
+  }
+
+  {
+    const cwd = await fixture();
     const { handlers } = load([json({ schemaVersion: 1, task: "repair", workflowState: "cancelled" })]);
     assert.equal(await handlers.get("before_agent_start")({}, { cwd }), undefined);
     await rm(cwd, { recursive: true });
