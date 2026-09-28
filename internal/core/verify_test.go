@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,56 @@ import (
 )
 
 const discountNode = "tests/property/test_discount.py::test_discount_total"
+
+func TestVerifyCancelledTaskPreservesEvidenceWithoutRunning(t *testing.T) {
+	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	state := gateState(t, root)
+	state.VerificationState = VerificationFailed
+	state.WorkflowState = WorkflowCancelled
+	state.CurrentFingerprint = "saved-fingerprint"
+	state.LastResultID = "saved-run"
+	state.RunDirectory = filepath.Join(root, ".pbt", "runs", "saved-run")
+	setGateState(t, root, state)
+	before := gateState(t, root)
+
+	runs, err := os.ReadDir(filepath.Join(root, ".pbt", "runs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runCalls int
+	service.Run = func(_ context.Context, _ []string, _ string, _ []string, _ int) ProcessResult {
+		runCalls++
+		return ProcessResult{}
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != (Result{
+		SchemaVersion:     schemaVersion,
+		Task:              "discount",
+		VerificationState: VerificationFailed,
+		WorkflowState:     WorkflowCancelled,
+		ReasonCode:        "verification_failed",
+		NextAction:        "none",
+	}) {
+		t.Fatalf("result = %#v", result)
+	}
+	if runCalls != 0 {
+		t.Fatalf("commands run = %d, want 0", runCalls)
+	}
+	if after := gateState(t, root); !reflect.DeepEqual(after, before) {
+		t.Fatalf("state changed: got %#v, want %#v", after, before)
+	}
+	afterRuns, err := os.ReadDir(filepath.Join(root, ".pbt", "runs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterRuns) != len(runs) {
+		t.Fatalf("run directories = %d, want %d", len(afterRuns), len(runs))
+	}
+}
 
 func TestVerifyPassesEveryRequiredNode(t *testing.T) {
 	service, root := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})

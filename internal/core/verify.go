@@ -38,6 +38,14 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	}
 	defer unlock()
 
+	state, err := LoadState(config.ProjectRoot, task)
+	if err != nil {
+		return Result{}, err
+	}
+	if state.WorkflowState == WorkflowCancelled {
+		return gateResult(state), nil
+	}
+
 	contractPath := filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json")
 	contract, err := LoadContract(contractPath)
 	if err != nil {
@@ -45,10 +53,6 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	}
 	if contract.Task != task {
 		return Result{}, fmt.Errorf("contract task %q does not match %q", contract.Task, task)
-	}
-	state, err := LoadState(config.ProjectRoot, task)
-	if err != nil {
-		return Result{}, err
 	}
 	state.VerificationState = VerificationRunning
 	if err := SaveState(config.ProjectRoot, state); err != nil {
