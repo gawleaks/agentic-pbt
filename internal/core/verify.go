@@ -25,6 +25,19 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
+	unlock, locked, err := tryLockGate(config.ProjectRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	if !locked {
+		state, err := LoadState(config.ProjectRoot, task)
+		if err != nil {
+			return Result{}, err
+		}
+		return verificationResult(state, task, VerificationRunning, "verification_running"), nil
+	}
+	defer unlock()
+
 	contractPath := filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json")
 	contract, err := LoadContract(contractPath)
 	if err != nil {
@@ -37,13 +50,9 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
-	if contract.Applicability == "not_applicable" {
-		result := verificationResult(state, task, VerificationNotApplicable, "verification_not_applicable")
-		state.VerificationState = result.VerificationState
-		if err := SaveState(config.ProjectRoot, state); err != nil {
-			return Result{}, err
-		}
-		return result, nil
+	state.VerificationState = VerificationRunning
+	if err := SaveState(config.ProjectRoot, state); err != nil {
+		return Result{}, err
 	}
 
 	before, err := Fingerprint(config.ProjectRoot, config, contractPath)
@@ -53,6 +62,12 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	runDirectory, err := os.MkdirTemp(filepath.Join(config.ProjectRoot, ".pbt", "runs"), task+"-")
 	if err != nil {
 		return Result{}, err
+	}
+	if contract.Applicability == "not_applicable" {
+		return service.persistVerification(config, state, task, runDirectory, "verification_not_applicable", before)
+	}
+	if err := service.checkPython(ctx, config); err != nil {
+		return service.persistVerification(config, state, task, runDirectory, "python_version_query_failed", before)
 	}
 	if err := os.WriteFile(filepath.Join(runDirectory, "pbt_pytest_reporter.py"), []byte(pytest.Reporter), 0o600); err != nil {
 		return Result{}, err
@@ -85,13 +100,12 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	artifactLimitMarkerPath := filepath.Join(runDirectory, "artifact-limit-exceeded")
 	env := replaceEnvironment(os.Environ(), "PYTHONPATH", prependPath(runDirectory, os.Getenv("PYTHONPATH")))
 	env = replaceEnvironment(env, "PBT_NODE_RESULTS", nodeResultsPath)
-	env = replaceEnvironment(env, "PBT_JUNIT_PATH", junitPath)
 	env = replaceEnvironment(env, "PBT_RUN_ARTIFACT_LIMIT", fmt.Sprint(runArtifactLimit))
 	env = replaceEnvironment(env, "PBT_ARTIFACT_LIMIT_MARKER", artifactLimitMarkerPath)
 	executionContext, cancelExecution := context.WithTimeout(ctx, time.Duration(config.TimeoutSeconds)*time.Second)
 	execution := service.run(
 		executionContext,
-		append(append([]string{}, config.Command...), "-p", "pbt_pytest_reporter"),
+		append(append([]string{}, config.Command...), "--junitxml", junitPath, "-p", "pbt_pytest_reporter"),
 		config.ProjectRoot,
 		env,
 		processOutputLimit,
@@ -149,13 +163,38 @@ func (service *Service) Verify(ctx context.Context, task string) (Result, error)
 	return service.persistVerification(config, state, task, runDirectory, "verification_passed", after)
 }
 
+func (service *Service) checkPython(ctx context.Context, config *Config) error {
+	argv := append(append([]string{}, config.Python...), "-c", pythonVersionQuery)
+	process := service.run(ctx, argv, config.ProjectRoot, os.Environ(), processOutputLimit)
+	if process.ExitCode != 0 || process.Error != "" {
+		return fmt.Errorf("python version query failed: %s", processError(process))
+	}
+	var versions struct {
+		Hypothesis string `json:"hypothesis"`
+		Pytest     string `json:"pytest"`
+	}
+	if err := decodeJSONBytes([]byte(process.Stdout), &versions); err != nil || strings.TrimSpace(versions.Hypothesis) == "" || strings.TrimSpace(versions.Pytest) == "" {
+		if err != nil {
+			return fmt.Errorf("python version query failed: %w", err)
+		}
+		return fmt.Errorf("python version query failed: missing package version")
+	}
+	return nil
+}
+
 func (service *Service) persistVerification(config *Config, state TaskState, task, runDirectory, reasonCode, fingerprint string) (Result, error) {
 	verificationState := VerificationFailed
-	if reasonCode == "verification_passed" {
+	switch reasonCode {
+	case "verification_passed":
 		verificationState = VerificationPassed
-	}
-	if reasonCode == "stale" {
+	case "stale":
 		verificationState = VerificationStale
+	case "verification_not_applicable":
+		verificationState = VerificationNotApplicable
+	}
+	if reasonCode == "python_version_query_failed" {
+		state.WorkflowState = WorkflowBlocked
+		state.SetupError = true
 	}
 	result := verificationResult(state, task, verificationState, reasonCode)
 	if err := writeJSONAtomic(filepath.Join(runDirectory, "result.json"), result); err != nil {

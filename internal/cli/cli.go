@@ -114,6 +114,9 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	if result.VerificationState == core.VerificationPassed || result.VerificationState == core.VerificationNotApplicable {
 		return 0
 	}
+	if result.ReasonCode == "python_version_query_failed" {
+		return 3
+	}
 	return 1
 }
 
@@ -193,6 +196,9 @@ func runResume(args []string, stdout, stderr io.Writer) int {
 }
 
 func gateExitCode(result core.Result) int {
+	if result.ReasonCode == "setup_error" {
+		return 3
+	}
 	if result.WorkflowState == core.WorkflowBlocked || result.WorkflowState == core.WorkflowCancelled {
 		return 2
 	}

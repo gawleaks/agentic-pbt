@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,6 +42,27 @@ func TestBeginRecordsDirtyBaselineAndMakesOneTaskActive(t *testing.T) {
 		if strings.Count(exclude, rule) != 1 {
 			t.Fatalf("exclude = %q, want one %q rule", exclude, rule)
 		}
+	}
+}
+
+func TestBeginReplacesTerminalActiveTask(t *testing.T) {
+	root, _ := stateTestRepository(t)
+	if _, err := Begin(root, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewService(root).Cancel(context.Background(), "first"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Begin(root, "second"); err != nil {
+		t.Fatal(err)
+	}
+
+	active, err := loadActiveTask(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active != "second" {
+		t.Fatalf("active task = %q, want second", active)
 	}
 }
 

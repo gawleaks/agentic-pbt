@@ -33,6 +33,11 @@ func Begin(root, task string) (Result, error) {
 		return Result{}, err
 	}
 	projectRoot := config.ProjectRoot
+	unlock, err := lockGate(context.Background(), projectRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
 	if err := addLocalExcludes(projectRoot); err != nil {
 		return Result{}, err
 	}
@@ -134,11 +139,49 @@ func lockGate(ctx context.Context, root string) (func(), error) {
 	}
 }
 
+func tryLockGate(root string) (func(), bool, error) {
+	path := filepath.Join(root, ".pbt", "state", "gate.lock")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, false, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			_ = file.Close()
+			return nil, false, nil
+		}
+		_ = file.Close()
+		return nil, false, err
+	}
+	return func() {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = file.Close()
+	}, true, nil
+}
+
 func createActiveTask(root, task string) error {
-	return writeActiveMarkerExclusive(
-		filepath.Join(root, ".pbt", "state", "active.json"),
-		activeTask{Task: task},
-	)
+	path := filepath.Join(root, ".pbt", "state", "active.json")
+	if err := writeActiveMarkerExclusive(path, activeTask{Task: task}); err == nil {
+		return nil
+	} else if !strings.Contains(err.Error(), "an active task already exists") {
+		return err
+	}
+
+	active, err := loadActiveTask(root)
+	if err != nil {
+		return err
+	}
+	state, err := LoadState(root, active)
+	if err != nil {
+		return err
+	}
+	if state.WorkflowState != WorkflowComplete && state.WorkflowState != WorkflowCancelled {
+		return fmt.Errorf("an active task already exists")
+	}
+	return writeJSONAtomic(path, activeTask{Task: task})
 }
 
 func writeActiveMarkerExclusive(path string, marker activeTask) error {

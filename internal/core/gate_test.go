@@ -91,6 +91,22 @@ func TestGateDoesNotSpendBudgetTwiceForSameRun(t *testing.T) {
 	}
 }
 
+func TestGatePromptsOnceForPendingVerification(t *testing.T) {
+	service, root := gateTestService(t)
+
+	first := mustGate(t, service, "discount")
+	second := mustGate(t, service, "discount")
+	if first.ReasonCode != "verification_missing" || first.FollowUp == "" {
+		t.Fatalf("first gate = %#v", first)
+	}
+	if second.FollowUp != "" {
+		t.Fatalf("second gate = %#v", second)
+	}
+	if state := gateState(t, root); state.RepairCount != 1 {
+		t.Fatalf("repair count = %d, want 1", state.RepairCount)
+	}
+}
+
 func TestGateCompletesCurrentPassedVerification(t *testing.T) {
 	service, root := gateTestService(t)
 	state := gateState(t, root)
@@ -137,6 +153,40 @@ func TestGateMarksChangedPassedVerificationStale(t *testing.T) {
 	}
 	if state := gateState(t, root); state.VerificationState != VerificationStale {
 		t.Fatalf("state = %#v", state)
+	}
+}
+
+func TestGatePromptsImmediatelyForStalePassedEvidence(t *testing.T) {
+	service, root := gateTestService(t)
+	state := gateState(t, root)
+	state.VerificationState = VerificationPassed
+	state.CurrentFingerprint = gateFingerprint(t, root)
+	state.LastResultID = "run-1"
+	state.RunDirectory = filepath.Join(root, ".pbt", "runs", "run-1")
+	setGateState(t, root, state)
+	writeStateTestFile(t, filepath.Join(root, "src", "value.py"), "value = 2\n")
+
+	got := mustGate(t, service, "discount")
+	if got.VerificationState != VerificationStale || got.FollowUp == "" {
+		t.Fatalf("gate = %#v", got)
+	}
+}
+
+func TestGateRevalidatesNotApplicableEvidence(t *testing.T) {
+	service, root := gateTestService(t)
+	contractPath := filepath.Join(root, ".pbt", "contracts", "discount.json")
+	writeStateTestFile(t, contractPath, `{"schemaVersion":1,"task":"discount","applicability":"not_applicable","reason":"docs only"}`)
+	if _, err := service.Verify(context.Background(), "discount"); err != nil {
+		t.Fatal(err)
+	}
+	writeStateTestFile(t, contractPath, `{
+		"schemaVersion":1,"task":"discount","applicability":"required","behavior":"discount",
+		"properties":[{"id":"discount","statement":"total","generator":"amounts","oracle":"expected","test":"tests/test_discount.py::test_total"}]
+	}`)
+
+	got := mustGate(t, service, "discount")
+	if got.VerificationState != VerificationStale || got.FollowUp == "" {
+		t.Fatalf("gate = %#v", got)
 	}
 }
 

@@ -31,44 +31,55 @@ func (service *Service) Gate(ctx context.Context, task string) (Result, error) {
 	if err != nil {
 		return gateSetupResult(task), err
 	}
-	if state.VerificationState == VerificationPassed {
-		fingerprint, err := Fingerprint(config.ProjectRoot, config, filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json"))
+	if state.WorkflowState == WorkflowCancelled {
+		return gateResult(state), nil
+	}
+	if state.VerificationState == VerificationPassed || state.VerificationState == VerificationNotApplicable {
+		contractPath := filepath.Join(config.ProjectRoot, ".pbt", "contracts", task+".json")
+		contract, err := LoadContract(contractPath)
+		if err != nil {
+			return gateSetupResult(task), err
+		}
+		if contract.Task != task {
+			return gateSetupResult(task), fmt.Errorf("contract task %q does not match %q", contract.Task, task)
+		}
+		fingerprint, err := Fingerprint(config.ProjectRoot, config, contractPath)
 		if err != nil {
 			return gateSetupResult(task), err
 		}
 		if fingerprint != state.CurrentFingerprint {
 			state.VerificationState = VerificationStale
-			if state.WorkflowState != WorkflowBlocked && state.WorkflowState != WorkflowCancelled {
+			if state.WorkflowState != WorkflowBlocked {
 				state.WorkflowState = WorkflowActive
 			}
 			if err := SaveState(config.ProjectRoot, state); err != nil {
 				return gateSetupResult(task), err
 			}
-			return gateResult(state), nil
 		}
 	}
-	if state.WorkflowState == WorkflowBlocked || state.WorkflowState == WorkflowCancelled {
+	if state.WorkflowState == WorkflowBlocked {
 		return gateResult(state), nil
 	}
-	if state.VerificationState == VerificationPassed {
+	if state.VerificationState == VerificationPassed || state.VerificationState == VerificationNotApplicable {
 		state.WorkflowState = WorkflowComplete
 		if err := SaveState(config.ProjectRoot, state); err != nil {
 			return gateSetupResult(task), err
 		}
 		return gateResult(state), nil
 	}
-	if state.VerificationState == VerificationNotApplicable {
-		state.WorkflowState = WorkflowComplete
-		if err := SaveState(config.ProjectRoot, state); err != nil {
-			return gateSetupResult(task), err
-		}
+	if state.VerificationState == VerificationRunning || state.WorkflowState != WorkflowActive {
 		return gateResult(state), nil
 	}
-	if state.WorkflowState != WorkflowActive || state.LastResultID == "" || state.LastGateRunID == state.LastResultID {
+
+	decisionID := state.LastResultID
+	if decisionID == "" {
+		decisionID = "pending"
+	}
+	if state.LastGateRunID == decisionID {
 		return gateResult(state), nil
 	}
 	if state.RepairCount >= repairBudget {
-		state.LastGateRunID = state.LastResultID
+		state.LastGateRunID = decisionID
 		state.WorkflowState = WorkflowBlocked
 		if err := SaveState(config.ProjectRoot, state); err != nil {
 			return gateSetupResult(task), err
@@ -77,7 +88,7 @@ func (service *Service) Gate(ctx context.Context, task string) (Result, error) {
 	}
 
 	state.RepairCount++
-	state.LastGateRunID = state.LastResultID
+	state.LastGateRunID = decisionID
 	if err := SaveState(config.ProjectRoot, state); err != nil {
 		return gateSetupResult(task), err
 	}
@@ -142,6 +153,7 @@ func (service *Service) Resume(ctx context.Context, task string) (Result, error)
 	}
 
 	state.WorkflowState = WorkflowActive
+	state.SetupError = false
 	state.RepairCount = 0
 	state.ResumedAt = time.Now().UTC()
 	if err := SaveState(config.ProjectRoot, state); err != nil {
@@ -163,7 +175,7 @@ func gateResult(state TaskState) Result {
 	reasonCode := gateReason(state)
 	nextAction := "verify"
 	switch reasonCode {
-	case "satisfied", "not_applicable", "verification_blocked":
+	case "satisfied", "not_applicable", "verification_blocked", "setup_error":
 		nextAction = "none"
 	case "verification_failed":
 		nextAction = "repair_and_verify"
@@ -184,6 +196,9 @@ func gateResult(state TaskState) Result {
 }
 
 func gateReason(state TaskState) string {
+	if state.SetupError {
+		return "setup_error"
+	}
 	if state.WorkflowState == WorkflowBlocked {
 		return "verification_blocked"
 	}

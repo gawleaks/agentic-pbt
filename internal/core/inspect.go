@@ -116,7 +116,31 @@ func (service *Service) loadConfig() (*Config, error) {
 	if strings.TrimSpace(service.Root) == "" {
 		return nil, fmt.Errorf("service root must not be empty")
 	}
-	return LoadConfig(filepath.Join(service.Root, "pbt.config.json"))
+	path, err := findConfigPath(service.Root)
+	if err != nil {
+		return nil, err
+	}
+	return LoadConfig(path)
+}
+
+func findConfigPath(root string) (string, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	for {
+		path := filepath.Join(root, "pbt.config.json")
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return path, os.ErrNotExist
+		}
+		root = parent
+	}
 }
 
 func (service *Service) run(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {

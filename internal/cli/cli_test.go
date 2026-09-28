@@ -211,7 +211,7 @@ func TestVerifyJSONWritesVerificationFailure(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("stdout = %q: %v", stdout.String(), err)
 	}
-	if code != 1 || result.ReasonCode != "pytest_collection_failed" || stderr.Len() != 0 {
+	if code != 3 || result.ReasonCode != "python_version_query_failed" || stderr.Len() != 0 {
 		t.Fatalf("code=%d result=%#v stderr=%q", code, result, stderr.String())
 	}
 }

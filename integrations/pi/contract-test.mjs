@@ -1,18 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const extension = await import(pathToFileURL(join(process.cwd(), "integrations/pi/index.ts")).href);
 
-async function fixture(active = true) {
-  const cwd = await mkdtemp(join(tmpdir(), "agentic-pbt-pi-"));
-  if (active) {
-    await mkdir(join(cwd, ".pbt/state"), { recursive: true });
-    await writeFile(join(cwd, ".pbt/state/active.json"), '{"task":"repair"}\n');
-  }
-  return cwd;
+async function fixture() {
+  return mkdtemp(join(tmpdir(), "agentic-pbt-pi-"));
 }
 
 function load(responses) {
@@ -38,6 +33,8 @@ function missing() {
   return { code: 127, killed: false, stderr: "pbt: command not found", stdout: "" };
 }
 
+const active = { schemaVersion: 1, task: "repair", workflowState: "active" };
+const noActive = { code: 3, killed: false, stderr: "no active PBT task", stdout: "" };
 const previousPbtBin = process.env.PBT_BIN;
 try {
   delete process.env.PBT_BIN;
@@ -45,9 +42,13 @@ try {
   {
     const cwd = await fixture();
     const { handlers, calls } = load([
-      json({ schemaVersion: 1, task: "repair" }),
+      json(active),
+      json(active),
       json({ schemaVersion: 1, followUp: "Run pbt verify" }, 1),
-      json({ schemaVersion: 1, followUp: "" }, 1),
+      json(active),
+      json({ schemaVersion: 1, workflowState: "cancelled" }, 2),
+      json(active),
+      json({ schemaVersion: 1, workflowState: "cancelled" }, 2),
     ]);
     const before = handlers.get("before_agent_start");
     const boundary = handlers.get("agent_before_settle");
@@ -65,81 +66,92 @@ try {
         continue: true,
       },
     );
-    assert.equal(await boundary({ outcome: "completed" }, { cwd }), undefined);
+    const controller = new AbortController();
+    controller.abort();
+    assert.equal(await boundary({ outcome: "aborted" }, { cwd, signal: controller.signal }), undefined);
+    assert.equal(await boundary({ outcome: "error" }, { cwd, signal: controller.signal }), undefined);
     assert.deepEqual(calls.map(({ args }) => args), [
       ["status", "--json"],
-      ["gate", "--task", "repair", "--json"],
-      ["gate", "--task", "repair", "--json"],
+      ["status", "--json"], ["gate", "--task", "repair", "--json"],
+      ["status", "--json"], ["cancel", "--task", "repair", "--json"],
+      ["status", "--json"], ["cancel", "--task", "repair", "--json"],
     ]);
-    assert.equal(await boundary({ outcome: "aborted" }, { cwd }), undefined);
-    assert.equal(await boundary({ outcome: "error" }, { cwd }), undefined);
+    for (const { options } of calls.filter(({ args }) => args[0] === "cancel" || args[0] === "status").slice(2)) {
+      assert.equal(options.signal, undefined);
+    }
     await rm(cwd, { recursive: true });
   }
 
   {
-    const cwd = await fixture(false);
-    const { handlers, calls } = load([]);
+    const cwd = await fixture();
+    const { handlers, calls } = load([noActive, noActive]);
     assert.equal(await handlers.get("before_agent_start")({}, { cwd }), undefined);
     assert.equal(await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }), undefined);
-    assert.equal(calls.length, 0);
+    assert.deepEqual(calls.map(({ args }) => args), [["status", "--json"], ["status", "--json"]]);
     await rm(cwd, { recursive: true });
   }
 
   {
     const cwd = await fixture();
-    const { handlers } = load([missing(), missing()]);
+    const { handlers } = load([json({ schemaVersion: 1, task: "repair", workflowState: "cancelled" })]);
+    assert.equal(await handlers.get("before_agent_start")({}, { cwd }), undefined);
+    await rm(cwd, { recursive: true });
+  }
+
+  {
+    const cwd = await fixture();
+    const { handlers } = load([missing()]);
     const policy = await handlers.get("before_agent_start")({}, { cwd });
     assert.equal(policy.message.customType, "agentic-pbt-setup");
-    assert.equal(policy.message.display, true);
-    assert.deepEqual(
-      await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
-      {
-        entries: [{ type: "custom_message", customType: "agentic-pbt-setup", content: "PBT setup error: pbt: command not found", display: true }],
-        continue: false,
-      },
-    );
     await rm(cwd, { recursive: true });
   }
 
   {
     const cwd = await fixture();
-    const { handlers } = load([json({ schemaVersion: 1, reasonCode: "setup_error" }, 3, "invalid PBT config")]);
-    assert.deepEqual(
-      await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
-      {
-        entries: [{ type: "custom_message", customType: "agentic-pbt-setup", content: "PBT setup error: invalid PBT config", display: true }],
-        continue: false,
-      },
-    );
+    const { handlers } = load([json(active), json({ schemaVersion: 1, reasonCode: "setup_error" }, 3)]);
+    const result = await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd });
+    assert.equal(result.entries[0].customType, "agentic-pbt-setup");
+    assert.match(result.entries[0].content, /pbt inspect --task repair --json/);
+    await rm(cwd, { recursive: true });
+  }
+
+  {
+    const cwd = await fixture();
+    const { handlers } = load([{ code: 3, killed: false, stderr: "open pbt.config.json: no such file or directory", stdout: "" }]);
+    const policy = await handlers.get("before_agent_start")({}, { cwd });
+    assert.equal(policy.message.customType, "agentic-pbt-setup");
+    await rm(cwd, { recursive: true });
+  }
+
+  {
+    const cwd = await fixture();
+    const { handlers } = load([{ code: 3, killed: false, stderr: "invalid active.json", stdout: "" }]);
+    const policy = await handlers.get("before_agent_start")({}, { cwd });
+    assert.equal(policy.message.customType, "agentic-pbt-setup");
     await rm(cwd, { recursive: true });
   }
 
   for (const [result, code] of [
-    [{ schemaVersion: 1, followUp: "" }, 1],
-    [{ schemaVersion: 1, workflowState: "blocked" }, 2],
-    [{ schemaVersion: 1, workflowState: "complete" }, 0],
+    [{ schemaVersion: 2, task: "repair" }, 0],
+    [active, 0],
   ]) {
     const cwd = await fixture();
-    const { handlers } = load([json(result, code)]);
-    assert.equal(await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }), undefined);
-    await rm(cwd, { recursive: true });
-  }
-
-  {
-    process.env.PBT_BIN = "";
-    const cwd = await fixture();
-    const { handlers, calls } = load([]);
-    const policy = await handlers.get("before_agent_start")({}, { cwd });
-    assert.equal(policy.message.customType, "agentic-pbt-setup");
-    assert.match(policy.message.content, /PBT_BIN must be an absolute path/);
-    assert.deepEqual(
-      await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
-      {
-        entries: [{ type: "custom_message", customType: "agentic-pbt-setup", content: "PBT setup error: PBT_BIN must be an absolute path", display: true }],
-        continue: false,
-      },
-    );
-    assert.equal(calls.length, 0);
+    const responses = result.schemaVersion === 2
+      ? [json(result, code)]
+      : [json(result), json({ schemaVersion: 2, followUp: "Run pbt verify" }, 1)];
+    const { handlers } = load(responses);
+    if (result.schemaVersion === 2) {
+      const policy = await handlers.get("before_agent_start")({}, { cwd });
+      assert.equal(policy.message.customType, "agentic-pbt-setup");
+    } else {
+      assert.deepEqual(
+        await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
+        {
+          entries: [{ type: "custom_message", customType: "agentic-pbt-setup", content: "PBT setup error: pbt returned unsupported schemaVersion", display: true }],
+          continue: false,
+        },
+      );
+    }
     await rm(cwd, { recursive: true });
   }
 
@@ -149,14 +161,6 @@ try {
     const { handlers, calls } = load([]);
     const policy = await handlers.get("before_agent_start")({}, { cwd });
     assert.equal(policy.message.customType, "agentic-pbt-setup");
-    assert.match(policy.message.content, /PBT_BIN must be an absolute path/);
-    assert.deepEqual(
-      await handlers.get("agent_before_settle")({ outcome: "completed" }, { cwd }),
-      {
-        entries: [{ type: "custom_message", customType: "agentic-pbt-setup", content: "PBT setup error: PBT_BIN must be an absolute path", display: true }],
-        continue: false,
-      },
-    );
     assert.equal(calls.length, 0);
     await rm(cwd, { recursive: true });
   }

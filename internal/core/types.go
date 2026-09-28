@@ -63,6 +63,7 @@ type TaskState struct {
 	VerificationState  VerificationState `json:"verificationState"`
 	WorkflowState      WorkflowState     `json:"workflowState"`
 	RunDirectory       string            `json:"runDirectory"`
+	SetupError         bool              `json:"setupError"`
 }
 
 type WorkflowState string

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -36,12 +37,30 @@ func RunProcess(ctx context.Context, argv []string, dir string, env []string, li
 
 	stdout := newCappedWriter(limit)
 	stderr := newCappedWriter(limit)
-	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = dir
 	command.Env = env
 	command.Stdout = stdout
 	command.Stderr = stderr
-	err := command.Run()
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		result.Error = err.Error()
+		result.Duration = time.Since(started)
+		result.TimedOut = errors.Is(ctx.Err(), context.DeadlineExceeded)
+		result.Cancelled = errors.Is(ctx.Err(), context.Canceled)
+		return result
+	}
+
+	done := make(chan struct{})
+	go func(pid int) {
+		select {
+		case <-ctx.Done():
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		case <-done:
+		}
+	}(command.Process.Pid)
+	err := command.Wait()
+	close(done)
 
 	result.Stdout, result.StdoutTruncated = stdout.String()
 	result.Stderr, result.StderrTruncated = stderr.String()

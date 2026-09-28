@@ -1,8 +1,13 @@
-import { access, readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-type Result = { task?: unknown; followUp?: unknown };
+type Result = {
+  schemaVersion: number;
+  task?: unknown;
+  workflowState?: unknown;
+  reasonCode?: unknown;
+  followUp?: unknown;
+};
 
 function setupMessage(error: string) {
   return {
@@ -18,34 +23,11 @@ function parseResult(stdout: string): Result | string {
     if (typeof result !== "object" || result === null || Array.isArray(result)) {
       return "pbt returned invalid JSON";
     }
-    return result;
+    const schemaVersion = (result as Record<PropertyKey, unknown>).schemaVersion;
+    if (schemaVersion !== 1) return "pbt returned unsupported schemaVersion";
+    return result as Result;
   } catch {
     return "pbt returned invalid JSON";
-  }
-}
-
-function activeTaskPath(cwd: string) {
-  return join(cwd, ".pbt/state/active.json");
-}
-
-async function activeTaskExists(cwd: string) {
-  try {
-    await access(activeTaskPath(cwd));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function activeTask(cwd: string) {
-  if (!(await activeTaskExists(cwd))) return;
-  try {
-    const state: unknown = JSON.parse(await readFile(activeTaskPath(cwd), "utf8"));
-    if (typeof state !== "object" || state === null || Array.isArray(state)) return;
-    const task = (state as Record<PropertyKey, unknown>).task;
-    if (typeof task === "string") return task;
-  } catch {
-    return;
   }
 }
 
@@ -60,11 +42,19 @@ function resolvePbt() {
 async function run(pi: ExtensionAPI, command: string, args: string[], signal: AbortSignal | undefined, parseNonzero = false): Promise<Result | string> {
   try {
     const result = await pi.exec(command, args, { signal });
-    if (result.code !== 0 && (!parseNonzero || (result.code !== 1 && result.code !== 2))) {
-      return result.stderr.trim() || `pbt ${args[0]} failed`;
+    if (result.stdout.trim() !== "") {
+      const parsed = parseResult(result.stdout);
+      if (isError(parsed)) return parsed;
+      if (result.code !== 0 && (!parseNonzero || (result.code !== 1 && result.code !== 2))) {
+        if (result.stderr.trim() !== "") return result.stderr.trim();
+        if (parsed.reasonCode === "setup_error" && args[2]) {
+          return `run pbt inspect --task ${args[2]} --json to diagnose PBT setup`;
+        }
+        return `pbt ${args[0]} failed`;
+      }
+      return parsed;
     }
-    if (result.stdout.trim() === "") return result.stderr.trim() || `pbt ${args[0]} failed`;
-    return parseResult(result.stdout);
+    return result.stderr.trim() || `pbt ${args[0]} failed`;
   } catch (error) {
     return error instanceof Error ? error.message : "pbt could not be started";
   }
@@ -74,36 +64,68 @@ function isError(result: Result | string): result is string {
   return typeof result === "string";
 }
 
+function isNoActiveTask(error: string) {
+  return error.includes("no active PBT task") || (error.includes("active.json") && error.includes("no such file or directory"));
+}
+
+async function activeTask(pi: ExtensionAPI, signal: AbortSignal | undefined): Promise<string | undefined> {
+  const pbt = resolvePbt();
+  if (pbt.startsWith("PBT_BIN")) throw new Error(pbt);
+  const result = await run(pi, pbt, ["status", "--json"], signal);
+  if (isError(result)) {
+    if (isNoActiveTask(result)) return;
+    throw new Error(result);
+  }
+  if (typeof result.task !== "string" || result.task === "") {
+    throw new Error("pbt status returned no task");
+  }
+  if (result.workflowState === "complete" || result.workflowState === "cancelled") {
+    return;
+  }
+  if (result.workflowState !== "active") {
+    throw new Error("pbt status returned invalid workflowState");
+  }
+  return result.task;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (_event, ctx) => {
-    if (!(await activeTaskExists(ctx.cwd))) return;
-
-    const pbt = resolvePbt();
-    if (pbt.startsWith("PBT_BIN")) return { message: setupMessage(pbt) };
-
-    const result = await run(pi, pbt, ["status", "--json"], ctx.signal);
-    if (isError(result) || typeof result.task !== "string" || result.task === "") {
-      return { message: setupMessage(isError(result) ? result : "pbt status returned no task") };
+    let task: string | undefined;
+    try {
+      task = await activeTask(pi, ctx.signal);
+    } catch (error) {
+      return { message: setupMessage(error instanceof Error ? error.message : "pbt status failed") };
     }
+    if (task === undefined) return;
 
     return {
       message: {
         customType: "agentic-pbt-policy",
-        content: `PBT task ${result.task} is active. Read skills/property-based-testing/SKILL.md, update its contract, then run pbt inspect --task ${result.task} --json and pbt verify --task ${result.task} --json.`,
+        content: `PBT task ${task} is active. Read skills/property-based-testing/SKILL.md, update its contract, then run pbt inspect --task ${task} --json and pbt verify --task ${task} --json.`,
         display: true,
       },
     };
   });
 
   pi.on("agent_before_settle", async (event, ctx) => {
-    if (event.outcome !== "completed") return;
-    const task = await activeTask(ctx.cwd);
-    if (!task) return;
+    const isCancellation = event.outcome === "aborted" || event.outcome === "error";
+    let task: string | undefined;
+    try {
+      task = await activeTask(pi, isCancellation ? undefined : ctx.signal);
+    } catch (error) {
+      if (event.outcome === "completed") {
+        return { entries: [{ type: "custom_message", ...setupMessage(error instanceof Error ? error.message : "pbt status failed") }], continue: false };
+      }
+      return;
+    }
+    if (task === undefined) return;
 
     const pbt = resolvePbt();
-    if (pbt.startsWith("PBT_BIN")) {
-      return { entries: [{ type: "custom_message", ...setupMessage(pbt) }], continue: false };
+    if (isCancellation) {
+      await run(pi, pbt, ["cancel", "--task", task, "--json"], undefined, true);
+      return;
     }
+    if (event.outcome !== "completed") return;
 
     const result = await run(pi, pbt, ["gate", "--task", task, "--json"], ctx.signal, true);
     if (isError(result)) {

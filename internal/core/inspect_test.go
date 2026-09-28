@@ -50,6 +50,26 @@ func TestInspectReportsInvalidVersionOutput(t *testing.T) {
 	}
 }
 
+func TestStatusFindsConfigurationAboveProjectRoot(t *testing.T) {
+	root, configPath := stateTestRepository(t)
+	projectRoot := filepath.Join(root, "app")
+	writeStateTestFile(t, configPath, `{
+		"schemaVersion":1,"projectRoot":"app","inputs":["src/**"],
+		"python":["python"],"command":["pytest"],"timeoutSeconds":30
+	}`)
+	writeStateTestFile(t, filepath.Join(projectRoot, "src", "value.py"), "value = 1\n")
+	runStateTestGit(t, root, "add", "pbt.config.json", "app")
+	runStateTestGit(t, root, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "add app")
+	if _, err := Begin(root, "discount"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := NewService(projectRoot).Status(context.Background(), "")
+	if err != nil || got.Task != "discount" {
+		t.Fatalf("status = %#v, %v", got, err)
+	}
+}
+
 func TestStatusMarksChangedPassedStateStale(t *testing.T) {
 	root, _ := stateTestRepository(t)
 	if _, err := Begin(root, "discount"); err != nil {
