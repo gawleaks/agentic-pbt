@@ -357,6 +357,28 @@ func TestVerifyFailsWhenRequiredNodeWasNotCollected(t *testing.T) {
 	}
 }
 
+func TestVerifyFailsForMalformedJUnit(t *testing.T) {
+	service, _ := verifyTestService(t, discountNode+"\n", `{"nodeid":"`+discountNode+`","outcome":"passed"}`+"\n", ProcessResult{})
+	originalRun := service.Run
+	service.Run = func(ctx context.Context, argv []string, dir string, env []string, limit int) ProcessResult {
+		result := originalRun(ctx, argv, dir, env, limit)
+		if path := argumentAfter(argv, "--junitxml"); path != "" {
+			if err := os.WriteFile(path, []byte("<testsuites>"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return result
+	}
+
+	result, err := service.Verify(context.Background(), "discount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VerificationState != VerificationFailed || result.ReasonCode != "junit_invalid" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestVerifyFailsForMalformedNodeResults(t *testing.T) {
 	service, _ := verifyTestService(t, discountNode+"\n", "not json\n", ProcessResult{})
 
