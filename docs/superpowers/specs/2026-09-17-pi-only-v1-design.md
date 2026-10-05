@@ -1,6 +1,6 @@
 # Pi-only v1 design
 
-**Status:** Proposed — awaiting user review  
+**Status:** Accepted
 **Scope:** Go `pbt` CLI, Python Hypothesis/pytest adapter, and Pi extension only
 
 This design refines the v0.2 proposal for the first shippable slice. It

@@ -61,6 +61,69 @@ A passing verification becomes stale after a relevant input, config, or contract
 change. `pbt gate` recomputes that freshness rather than trusting a lifecycle
 callback.
 
+## Example: add a discount feature with Pi
+
+Suppose `~/work/shop` is an existing Git repository using `uv`, with Python
+source under `src/` and property tests under `tests/property/`. After installing
+`pbt` as above, prepare the project from its root:
+
+```bash
+export PBT_HOME=/absolute/path/to/agentic-pbt # checkout containing integrations/pi and skills/
+cd ~/work/shop
+uv add --dev pytest hypothesis
+mkdir -p skills
+cp -R "$PBT_HOME/skills/property-based-testing" skills/
+```
+
+Create `pbt.config.json` in `~/work/shop` (the `uv.lock` file comes from `uv`):
+
+```json
+{
+  "schemaVersion": 1,
+  "projectRoot": ".",
+  "inputs": ["src/**/*.py", "tests/**/*.py", "pyproject.toml", "uv.lock"],
+  "python": ["uv", "run", "python"],
+  "command": ["uv", "run", "pytest", "tests/property"],
+  "timeoutSeconds": 120
+}
+```
+
+Commit the config, dependency changes, and copied skill. **Before changing the
+discount behavior**, start the task and launch Pi from the *shop* directory:
+
+```bash
+git add pbt.config.json pyproject.toml uv.lock skills/property-based-testing
+git commit -m "chore(test): configure property verification"
+pbt begin --task discount
+PBT_BIN="$(go env GOPATH)/bin/pbt" pi -e "$PBT_HOME/integrations/pi/index.ts"
+```
+
+Give Pi a concrete request:
+
+> Implement `apply_discount(subtotal, percent)` in `src/discount.py` for
+> non-negative integer subtotals and whole-number percentages from 0 to 100.
+> Read `skills/property-based-testing/SKILL.md`, inspect the active task, and
+> create `.pbt/contracts/discount.json` before implementation. Cover the
+> behavior with a Hypothesis property at
+> `tests/property/test_discount.py::test_discount_total` using an independent
+> oracle or invariant. Run `pbt verify --task discount --json`; fix any failures
+> without weakening the property.
+
+Pi can use its existing shell tool to create the contract and test. The
+extension injects the active-task instructions and, if Pi tries to finish
+without current evidence, queues a bounded repair follow-up. After Pi finishes,
+check the result in the project root:
+
+```bash
+pbt gate --task discount --json
+```
+
+For this behavioral task, the gate must report `verificationState: passed` and
+`workflowState: complete`. Review and commit `src/discount.py`, the property
+test, and `.pbt/contracts/discount.json`; keep `.pbt/state/` and `.pbt/runs/`
+local. Re-run `pbt verify --task discount --json` if you edit relevant files
+after the pass.
+
 ## Repairs and cancellation
 
 At a completed Pi turn, the extension calls `pbt gate --task <id> --json`.
